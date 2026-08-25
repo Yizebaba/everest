@@ -54,3 +54,6 @@ credentials
 apps/web/public/tiles/
 apps/web/public/satellite/everest-rgb.png
 apps/web/public/cesium/
+
+# Local dev/next logs
+*.log
