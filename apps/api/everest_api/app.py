@@ -34,7 +34,7 @@ _CORRELATION_HEADER = "X-Correlation-ID"
 _CORRELATION_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 _DEFAULT_CORS_ORIGINS = (
     "http://localhost:42420",
-    "http://localhost:48237",
+    "http://localhost:50151",
 )
 _LOGGER = logging.getLogger(__name__)
 
