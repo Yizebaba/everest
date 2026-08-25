@@ -3020,3 +3020,56 @@ profiles or the production canary, or permit legal hold / disposition.
 This PASS covers the recorded nonproduction runtime and completed Gate C
 blocks. It does not authorize release, shared/production deployment, or any
 irreversible production operation.
+
+---
+
+# EV-SOURCES-ADR019 — Terrain / AWS Station / Satellite Independent QA
+
+**Review date:** 2026-08-25  
+**Scope:** Independent re-evaluation of the ADR-019 sources (Copernicus DEM
+GLO-30 terrain, Everest AWS station, Himawari satellite) against
+`docs/qa/EV-SOURCES-ADR019-handoff.md` and the running backend.
+
+## Verdict
+
+**PASS for the recorded `connected` scope.** The three source packages
+(connector, parser, QC, real_retrieval, tests) and their backend normalizers/
+routes are implemented and tested. They remain `connected`, **not** `verified`:
+no canonical row has yet been ingested into the persistent database for these
+sources, and independent data-quality acceptance for full persisted records is
+not claimed.
+
+## Checks executed
+
+| Check | Result |
+| --- | --- |
+| `services/terrain/tests/test_terrain.py` | **PASS** — 4 passed |
+| `services/satellite/himawari/tests/test_himawari.py` | **PASS** |
+| `services/weather/everest_aws/tests/test_everest_aws.py` | **PASS** |
+| `apps/api/tests/test_sources_normalizers.py` | **PASS** — 3 passed |
+| `GET /api/terrain/tile?lat=27.98806&lon=86.92528` | **HTTP 200** (no tile persisted yet) |
+| `GET /api/observations/current` | **HTTP 200** (no observations persisted yet) |
+| `GET /api/satellite/segments` | **HTTP 200** (no segments persisted yet) |
+
+## Source facts (from handoff, verified against official docs 2026-08-24)
+
+- **Copernicus DEM GLO-30**: AWS Open Data `copernicus-dem-30m` (eu-central-1,
+  anonymous), free + attribution (DOI 10.5270/ESA-c5d3d65). `connected`.
+- **Everest AWS**: AppState Everest Weather Portal CSV feed (GitHub mirror
+  approved by ADR-019 amendment). No license; display/research only,
+  commercial NOT authorized. `connected`.
+- **Himawari-8/9**: NOAA AWS S3 `noaa-himawari9` (anonymous), free with
+  attribution. `connected`.
+
+Pending (not claimed verified): commercial-use clause text for GLO-30 beyond
+attribution; production ingestion and independent data-quality acceptance for
+the three canonical models.
+
+## Boundary
+
+This records the `connected` evidence for the ADR-019 sources. It does not mark
+them `verified`, does not authorize commercial use of the Everest AWS feed, and
+does not open new data-domain work (OSM, Risk, additional satellite/terrain)
+beyond the ADR-019 authorization. Ingesting persisted terrain/observation/
+satellite records into the persistent database and validating the Cesium
+frontend against them remains a future, separately authorized step.
