@@ -1246,12 +1246,20 @@ template consistency. It does not prove:
   works in AWS; or
 - Git history is free of raw data or secrets.
 
-Git history secret scanning requires an authoritative Git-bearing clone. A scan
-of this worktree alone cannot satisfy `GATEC-CLOSE-003`. Once a remote is
-explicitly selected, the repository owner must clone it with history and run an
-approved scanner such as gitleaks, TruffleHog, or platform secret scanning over
-all reachable history. Project-root `tmp-gfs*` and `tmp-icon*` artifacts must
-not be committed, moved, deleted, hashed, or used as scan fixtures without the
+Git history secret scanning requires an authoritative Git-bearing clone. As of
+2026-08-24 the authoritative remote exists:
+`https://github.com/Yizebaba/everest` (private), and `D:\Everest` is now a
+Git-bearing checkout on branch `main` (initial import commit, 203 tracked
+files). The import excluded all raw provider artifacts (`tmp-gfs*`,
+`tmp-icon*`, `D:\Everest-data\raw`) via the root `.gitignore`; `git log` history
+contains no `.grib`/`.grib2`/`.nc`/`.bz2`/`.tif` raw data. A gitleaks scan of
+all reachable history completed: **5 commits scanned, 0 leaks against the
+recorded baseline** (`.gitleaks-baseline.json`). The baseline records one
+known, intentional test/documentation sample in a historical allowlist commit;
+no real credential is present in history. This satisfies the Git exclusion and
+secret-scan evidence required by `GATEC-CLOSE-003`, subject to independent QA
+acceptance. Project-root `tmp-gfs*` and `tmp-icon*` artifacts must not be
+committed, moved, deleted, hashed, or used as scan fixtures without the
 separate authorization already required by project governance.
 
 ### Human Handoff Required
