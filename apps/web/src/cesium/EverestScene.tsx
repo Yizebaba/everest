@@ -10,6 +10,7 @@ import {
   Entity,
   ScreenSpaceEventHandler,
   ScreenSpaceEventType,
+  UrlTemplateImageryProvider,
   Viewer,
 } from "cesium";
 import "cesium/Build/Cesium/Widgets/widgets.css";
@@ -68,6 +69,12 @@ export function EverestScene({
     if (!container) {
       return undefined;
     }
+    // OSM standard raster tiles (interactive viewport-only use, per the OSMF
+    // Tile Usage Policy). Attribution is shown in the scene footer.
+    const baseLayer = new UrlTemplateImageryProvider({
+      url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+      credit: "© OpenStreetMap contributors",
+    });
     const viewer = new Viewer(container, {
       baseLayer: false,
       animation: false,
@@ -80,6 +87,7 @@ export function EverestScene({
       infoBox: false,
       fullscreenButton: false,
     });
+    viewer.imageryLayers.addImageryProvider(baseLayer);
     viewer.scene.camera.setView({
       destination: Cartesian3.fromDegrees(
         AOI_CENTER.longitude,
