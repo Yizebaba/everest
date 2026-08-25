@@ -12,7 +12,6 @@ import { useEffect, useRef, useState } from "react";
 import {
   Cartesian2,
   Cartesian3,
-  Cesium3DTileset,
   Color,
   defined,
   Entity,
@@ -25,17 +24,11 @@ import {
 } from "cesium";
 import "cesium/Build/Cesium/Widgets/widgets.css";
 
-import type {
-  CanonicalWeatherRecord,
-  SatelliteSegment,
-  TerrainTileResponse,
-} from "@/api/types";
+import type { CanonicalWeatherRecord } from "@/api/types";
 import { AOI_CENTER } from "@/lib/geo";
 
 export interface EverestSceneProps {
   records: CanonicalWeatherRecord[];
-  terrainTile: TerrainTileResponse | null;
-  satelliteSegments: SatelliteSegment[];
   onSelectRecord?: (record: CanonicalWeatherRecord | null) => void;
 }
 
@@ -55,12 +48,10 @@ export function EverestScene({
 }: EverestSceneProps): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewerRef = useRef<Viewer | null>(null);
-  const terrainTilesetRef = useRef<Cesium3DTileset | null>(null);
   const entityByRecord = useRef(new Map<string, Entity>());
   const onSelectRef = useRef(onSelectRecord);
   onSelectRef.current = onSelectRecord;
 
-  const [showTerrain, setShowTerrain] = useState(true);
   const [showSatellite, setShowSatellite] = useState(false);
   const [webglOk] = useState(() => {
     try {
@@ -104,9 +95,9 @@ export function EverestScene({
         destination: Cartesian3.fromDegrees(
           AOI_CENTER.longitude,
           AOI_CENTER.latitude,
-          230000,
+          45000,
         ),
-        orientation: { heading: 0, pitch: -Math.PI / 2, roll: 0 },
+        orientation: { heading: 0, pitch: -Math.PI / 3.5, roll: 0 },
       });
     } catch (error) {
       console.error("Cesium viewer init failed:", error);
@@ -198,38 +189,6 @@ export function EverestScene({
     if (!viewer) {
       return;
     }
-    if (terrainTilesetRef.current) {
-      viewer.scene.primitives.remove(terrainTilesetRef.current);
-      terrainTilesetRef.current = null;
-    }
-    if (showTerrain) {
-      // Cesium resource/worker wiring can fail under bundlers; never let it
-      // crash the whole page — the scene degrades to the base view instead.
-      void (async () => {
-        try {
-          // Cesium 1.144+: tilesets load through Cesium3DTileset.fromUrl
-          // (the constructor no longer fetches from a url option).
-          const tileset = await Cesium3DTileset.fromUrl("/tiles/tileset.json", {
-            maximumScreenSpaceError: 16,
-          });
-          const current = viewerRef.current;
-          if (!current) {
-            return;
-          }
-          terrainTilesetRef.current = tileset;
-          current.scene.primitives.add(tileset);
-        } catch (error) {
-          console.error("terrain tileset load failed:", error);
-        }
-      })();
-    }
-  }, [showTerrain]);
-
-  useEffect(() => {
-    const viewer = viewerRef.current;
-    if (!viewer) {
-      return;
-    }
     const layers = viewer.imageryLayers;
     for (let i = layers.length - 1; i >= 0; i -= 1) {
       const layer = layers.get(i);
@@ -292,13 +251,6 @@ export function EverestScene({
             aria-label="Everest 3D scene"
           />
           <div className="scene__controls" role="group" aria-label="Layers">
-            <button
-              type="button"
-              aria-pressed={showTerrain}
-              onClick={() => setShowTerrain((v) => !v)}
-            >
-              Terrain
-            </button>
             <button
               type="button"
               aria-pressed={showSatellite}
