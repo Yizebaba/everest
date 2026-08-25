@@ -23,4 +23,12 @@
     "bucketKeyEnabled": true
   },
   "lifecycleRules": []
+  ,"provisioningOrder": [
+    "create-bucket-with-object-lock-enabled",
+    "set-bucket-owner-enforced-and-four-bpa-and-sse-kms",
+    "set-default-governance-180-days",
+    "read-back-object-lock-governance-180-days",
+    "attach-bucket-lock-mutation-deny"
+  ],
+  "attachMutationDenyOnlyAfterReadback": true
 }

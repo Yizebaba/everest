@@ -24,22 +24,24 @@ Before any AWS action, the human operator must:
 
 ## Stage 1 — Governance provisioning (next separate task)
 
-1. Produce a separately reviewed deployment package from these contracts. The
-   future deployment package must have no unresolved placeholders, enabled
-   canary, enabled legal/hold/disposition role, Lifecycle rule, wildcard Allow,
-   or secret-shaped text. This offline renderer resolves only the supplied KMS
-   parameter and is not itself a deployable package.
+1. Render a fully resolved review package from the exact config. Rendering must
+   fail for any unresolved output placeholder, unexpected field, missing field,
+   invalid ARN, enabled canary, Lifecycle rule, unknown S3 action, wildcard
+   Allow, or secret-shaped text. Legal/hold/disposition roles remain absent.
 2. Create the dedicated empty Governance QA bucket with Object Lock enabled at
    creation and Versioning enabled. Configure BucketOwnerEnforced ownership,
    complete Block Public Access, SSE-KMS with Bucket Key, and default
    `GOVERNANCE` retention for exactly 180 days.
-3. Attach explicit denies for Governance bypass, unversioned delete, Object
-   Lock/Lifecycle mutation, and legal hold. Attach the writer boundary to each
-   B1 writer without broadening its put-only prefix policy.
-4. Create `retention-admin` disabled with approved MFA human trust and only the
-   exact policy in this package. Create the legal authority deny-only and the
-   no-permission hold/disposition placeholders with no trust or principal.
-   Create the disabled audit-read role with approved MFA human trust.
+3. Set the bucket default to `GOVERNANCE` 180 days and read it back. Only after
+   exact readback succeeds, attach the explicit bucket-lock-mutation deny plus
+   denies for Governance bypass, unversioned delete, Lifecycle mutation, and
+   legal hold. This order avoids denying the provisioning call itself. Attach
+   the writer boundary without broadening any put-only prefix policy. Configure
+   no Lifecycle rule.
+4. Do not create legal-authority, hold-executor, or disposition-executor roles.
+   Keep `everest-retention-broker` and `everest-retention-admin` uncreated and
+   their policies unattached until the Governance QA activation gate below.
+   The audit role may be created only from the resolved named MFA trust.
 5. Return sanitized configuration readback. Do not upload a test object until
    an independently reviewed Governance QA task authorizes it.
 
@@ -52,6 +54,15 @@ metadata access. QA must negatively prove writer read/retention/hold/delete/
 bypass denial; retention-admin shortening/bypass/hold/delete denial; no-version
 delete denial; Lifecycle absence; legal/hold/disposition disabled state; delete
 marker rejection; drift blocking; and KMS survival controls.
+
+Retention mutation is never a direct human `PutObjectRetention` call. At the
+approved activation gate, perform this exact transition: create the broker with
+the approved service/executor trust; create `everest-retention-admin` trusting
+only that broker; attach the exact Governance-only policy; prove no human can
+assume the admin; enable only the broker command that calculates
+`max(version_created_at + duration, acquired_at + duration)`; then prove that
+arbitrary dates and `COMPLIANCE` mode are rejected. Failure rolls back by
+deleting the unattached roles/policies before any protected test object exists.
 
 Governance mode can permit a sufficiently privileged bypass in AWS, but Everest
 policy prohibits all bypass. A failed negative test is a stop condition, not a
@@ -95,8 +106,9 @@ external inventory of every already protected exact version.
 - [ ] CMK ARN and sanitized metadata: customer-managed, symmetric,
       encrypt/decrypt, enabled, single-Region. No key policy secret material.
 - [ ] Role names, paths, enabled state, trust type, attached policy ARNs/hashes.
-- [ ] Legal authority has no trust/human principal and deny-only policy.
-- [ ] Hold/disposition executors have no trust and no permissions.
+- [ ] Legal authority, hold executor, and disposition executor roles are absent.
+- [ ] Retention broker/admin are uncreated until the activation transition; after
+      activation, admin trusts only broker and cannot be assumed by a human.
 - [ ] Audit role has metadata-only actions and no payload read/mutation.
 - [ ] Every synthetic object: opaque correlation ID, byte count, bucket, key,
       exact non-null version ID, mode, retain-until UTC, readback UTC.

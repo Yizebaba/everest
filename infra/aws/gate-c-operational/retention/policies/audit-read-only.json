@@ -17,7 +17,6 @@
       "Sid": "ReadExactVersionRetentionMetadataNotPayload",
       "Effect": "Allow",
       "Action": [
-        "s3:GetObjectAttributes",
         "s3:GetObjectLegalHold",
         "s3:GetObjectRetention"
       ],

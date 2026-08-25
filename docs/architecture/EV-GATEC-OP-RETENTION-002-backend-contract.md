@@ -41,6 +41,8 @@ Create `raw_artifact_storage_version` with:
 | `bucket_name` | Required non-empty S3 bucket name |
 | `object_key` | Required non-empty key; never exposed by public API |
 | `version_id` | Required, non-empty, non-`null`; exact S3 version ID |
+| `version_created_at` | Required immutable UTC S3 version-creation fact; retention arithmetic input, never application wall-clock substitution |
+| `s3_last_modified` | Required immutable UTC S3 `LastModified` readback fact; provenance/reconciliation input and never rewritten by later verification |
 | `etag` | Nullable bounded readback fact; not treated as a cryptographic checksum |
 | `checksum_algorithm`, `checksum_value` | Nullable pair; both null or both present |
 | `kms_key_arn` | Required exact key ARN for protected encrypted versions |
@@ -49,7 +51,7 @@ Create `raw_artifact_storage_version` with:
 | `observed_legal_hold` | `ON`, `OFF`, or `UNKNOWN` |
 | `storage_state` | One state from the approved machine below |
 | `first_verified_at`, `last_verified_at` | Nullable/required according to state; UTC readback timestamps |
-| `policy_version` | Required `2026-08-24.b2.v1` for new B2 projections |
+| `policy_version` | Required `2026-08-25.b2.v2` for new B2 projections |
 | `created_at` | Immutable UTC insertion time |
 
 Required uniqueness is `(bucket_name, object_key, version_id)`. Index
@@ -154,7 +156,9 @@ completion, KMS destruction, or missing readback never completes disposition.
 2. Every command rejects missing bucket/key/version/correlation facts before a
    port call.
 3. 180-day default and 730-day extension use fixed-day UTC arithmetic and later-
-   of version-created/acquired semantics.
+   of immutable `version_created_at`/`acquired_at` semantics. Tests must reject
+   missing, mutable, timezone-naive, future-inconsistent, or substituted timing
+   facts and preserve `s3_last_modified` unchanged across repeated readbacks.
 4. S3 success is recorded only after exact-version readback.
 5. Drift, delete marker, unknown hold, extension failure, and KMS access failure
    block rather than infer success.
@@ -163,6 +167,10 @@ completion, KMS destruction, or missing readback never completes disposition.
 7. Transaction/concurrency tests prove expected-state compare-and-set and
    idempotent correlation behavior.
 8. Public API responses and existing weather field meanings remain unchanged.
+9. Governance QA cannot invoke direct arbitrary retention mutation. A broker
+   calculates the approved date, invokes an executor restricted to
+   `GOVERNANCE`, and rejects `COMPLIANCE`, shortening, removal, and caller-
+   supplied retain-until dates.
 
 ## Handoffs and sequence
 

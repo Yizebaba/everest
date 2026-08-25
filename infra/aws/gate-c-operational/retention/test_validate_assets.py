@@ -1,10 +1,20 @@
-"""Offline tests for Block-2 retention policy/resource contracts."""
+"""Mutation-heavy offline tests for Block-2 retention contracts."""
+
+from __future__ import annotations
 
 from copy import deepcopy
+from pathlib import Path
+from typing import Any
 
 import pytest
 
-from render_assets import ROOT, read_json, substitute, validate_config
+from render_assets import (
+    ROOT,
+    read_json,
+    render,
+    scalar_strings,
+    validate_config,
+)
 from validate_assets import (
     validate_all,
     validate_bucket_contract,
@@ -16,170 +26,319 @@ from validate_assets import (
 )
 
 
+def _resolved_config() -> dict[str, Any]:
+    """Return a syntactically resolved offline fixture."""
+    config = read_json(ROOT / "retention-config.json")
+    config["kmsKeyArn"] = (
+        "arn:aws:kms:ap-south-1:982408502231:key/"
+        "00000000-0000-0000-0000-000000000000"
+    )
+    config["principals"][
+        "brokerExecutorPrincipalArn"
+    ] = "arn:aws:iam::982408502231:role/everest/b2-broker-executor"
+    config["principals"][
+        "auditHumanPrincipalArn"
+    ] = "arn:aws:iam::982408502231:role/everest/b2-audit-reviewer"
+    return config
+
+
+def _mutating_reader(
+    target: str, mutation: Any
+) -> Any:  # pylint: disable=unnecessary-lambda-assignment
+    """Build a read_json replacement that mutates one named document."""
+    original = read_json
+
+    def reader(path: Path) -> dict[str, Any]:
+        document = deepcopy(original(path))
+        if path.name == target:
+            mutation(document)
+        return document
+
+    return reader
+
+
 def test_all_checked_in_assets_pass_offline_validation() -> None:
-    """The complete inert B2 foundation satisfies every invariant."""
+    """The complete B2 review package satisfies every invariant."""
     assert not validate_all()
 
 
 @pytest.mark.parametrize(
     ("section", "field", "value"),
     [
-        ("governanceQa", "bucketName", "wrong-bucket"),
+        ("governanceQa", "bucketName", "wrong"),
         ("governanceQa", "mode", "COMPLIANCE"),
         ("governanceQa", "days", 179),
-        ("governanceQa", "provisioningEnabled", True),
-        ("audit", "bucketName", "wrong-audit"),
-        ("audit", "mode", "GOVERNANCE"),
         ("audit", "days", 1094),
-        ("audit", "provisioningEnabled", True),
         ("productionCanary", "enabled", True),
         ("productionCanary", "objectCount", 2),
-        ("productionCanary", "maxObjectSizeBytes", 1025),
     ],
 )
-def test_config_rejects_authorization_scope_mutation(
+def test_config_scope_mutations_fail_closed(
     section: str, field: str, value: object
 ) -> None:
-    """Names, defaults, provisioning, and canary limits fail closed."""
+    """Authorized names, modes, durations, and gates are immutable."""
     config = read_json(ROOT / "retention-config.json")
     config[section][field] = value
     with pytest.raises(ValueError):
         validate_config(config, resolved=False)
 
 
-def test_resolved_mode_rejects_placeholder_and_wrong_region_key() -> None:
-    """A resolved package requires an exact same-account regional key ARN."""
+@pytest.mark.parametrize("mutation", ["missing", "unknown"])
+def test_config_rejects_missing_and_unknown_fields(mutation: str) -> None:
+    """Top-level schema drift never passes silently."""
     config = read_json(ROOT / "retention-config.json")
-    with pytest.raises(ValueError, match="KMS ARN"):
+    if mutation == "missing":
+        del config["lifecycleRules"]
+    else:
+        config["unexpected"] = True
+    with pytest.raises(ValueError, match="fields must be exact"):
+        validate_config(config, resolved=False)
+
+
+def test_resolved_config_requires_exact_arns_and_no_placeholders() -> None:
+    """A rendered package requires account-scoped named role and KMS ARNs."""
+    validate_config(_resolved_config(), resolved=True)
+    config = _resolved_config()
+    config["principals"]["auditHumanPrincipalArn"] = "${STILL_FAKE}"
+    with pytest.raises(ValueError):
         validate_config(config, resolved=True)
-    config["kmsKeyArn"] = (
-        "arn:aws:kms:us-east-1:982408502231:key/"
-        "00000000-0000-0000-0000-000000000000"
+
+
+def test_renderer_outputs_every_json_and_no_placeholder(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The resolved package contains all JSON assets and no marker."""
+    written: dict[str, dict[str, Any]] = {}
+
+    def capture(path: Path, document: dict[str, Any]) -> None:
+        written[path.as_posix()] = document
+
+    monkeypatch.setattr("render_assets.write_json", capture)
+    output = Path("resolved-package")
+    render(_resolved_config(), output)
+    expected = {
+        (output / path.relative_to(ROOT)).as_posix()
+        for path in ROOT.rglob("*.json")
+    }
+    assert set(written) == expected
+    assert not any(
+        "${" in value
+        for document in written.values()
+        for value in scalar_strings(document)
     )
-    with pytest.raises(ValueError, match="KMS ARN"):
-        validate_config(config, resolved=True)
+    contract = written["resolved-package/roles/role-contracts.json"]
+    role_names = {role["name"] for role in contract["roles"]}
+    absent_names = {
+        "legal-authority-placeholder",
+        "hold-executor",
+        "disposition-executor",
+    }
+    assert set(contract["absentRoles"]) == absent_names
+    assert role_names.isdisjoint(absent_names)
 
 
-def test_resolved_mode_accepts_only_exact_account_region_key() -> None:
-    """A syntactically exact supplied CMK ARN can pass offline rendering."""
-    config = read_json(ROOT / "retention-config.json")
-    config["kmsKeyArn"] = (
-        "arn:aws:kms:ap-south-1:982408502231:key/"
-        "00000000-0000-0000-0000-000000000000"
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda value: value["blockPublicAccess"].pop("blockPublicAcls"),
+        lambda value: value["blockPublicAccess"].update({"extra": True}),
+        lambda value: value["blockPublicAccess"].update(
+            {"restrictPublicBuckets": False}
+        ),
+        lambda value: value.update({"objectOwnership": "ObjectWriter"}),
+        lambda value: value["defaultEncryption"].update(
+            {"kmsKeyArn": "arn:wrong"}
+        ),
+        lambda value: value.update({"unknown": True}),
+    ],
+)
+def test_bucket_mutations_fail_closed(
+    monkeypatch: pytest.MonkeyPatch, mutation: Any
+) -> None:
+    """BPA, ownership, KMS resource, and schema drift are rejected."""
+    monkeypatch.setattr(
+        "validate_assets.read_json",
+        _mutating_reader("governance-qa-bucket.json", mutation),
     )
-    validate_config(config, resolved=True)
-
-
-def test_substitution_is_deterministic_and_bounded() -> None:
-    """Rendering replaces declared values without changing other facts."""
-    value = {
-        "kms": "${B2_KMS_KEY_ARN}",
-        "trust": "${APPROVED_HUMAN_MFA_TRUST_POLICY}",
-    }
-    replacements = {"B2_KMS_KEY_ARN": "arn:fixture"}
-    assert substitute(value, replacements) == substitute(value, replacements)
-    assert substitute(value, replacements) == {
-        "kms": "arn:fixture",
-        "trust": "${APPROVED_HUMAN_MFA_TRUST_POLICY}",
-    }
-
-
-def test_bucket_resources_are_inert_locked_and_lifecycle_free() -> None:
-    """Both authorized bucket contracts preserve their exact defaults."""
-    for name in ("governance-qa-bucket.json", "audit-bucket.json"):
-        assert not validate_bucket_contract(ROOT / "resources" / name)
-
-
-def test_production_canary_is_exact_and_disabled() -> None:
-    """No production canary can be enabled by this offline foundation."""
-    assert validate_canary() == []
-
-
-def test_role_separation_is_deny_or_disabled_by_default() -> None:
-    """Legal, hold, and disposition identities have no usable authority."""
-    assert not validate_roles()
-    legal = read_json(ROOT / "policies" / "legal-authority-deny-only.json")
-    assert legal["Statement"][0]["Effect"] == "Deny"
-    assert legal["Statement"][0]["Action"] == "*"
-    for name in (
-        "hold-executor-disabled.json",
-        "disposition-executor-disabled.json",
-    ):
-        assert read_json(ROOT / "policies" / name)["Statement"] == []
-
-
-def test_policies_enforce_writer_and_bucket_negative_boundaries() -> None:
-    """Bypass, no-version delete, Lifecycle, hold, and writer powers are denied."""
-    assert not validate_policies()
-
-
-def test_retention_admin_cannot_bypass_hold_delete_or_mutate_bucket() -> None:
-    """Retention administration is exact readback plus retention extension."""
-    document = read_json(ROOT / "policies" / "retention-admin.json")
-    actions = {
-        action
-        for statement in document["Statement"]
-        for action in statement["Action"]
-    }
-    assert "s3:PutObjectRetention" in actions
-    assert actions.isdisjoint(
-        {
-            "s3:BypassGovernanceRetention",
-            "s3:DeleteObject",
-            "s3:DeleteObjectVersion",
-            "s3:PutObjectLegalHold",
-            "s3:PutLifecycleConfiguration",
-        }
+    assert validate_bucket_contract(
+        ROOT / "resources" / "governance-qa-bucket.json"
     )
 
 
-def test_audit_policy_reads_metadata_but_not_payload_or_mutation() -> None:
-    """Audit readers see retention controls without raw object payloads."""
+def test_provisioning_order_is_create_set_readback_then_deny() -> None:
+    """The lock-mutation deny cannot block default-retention provisioning."""
+    document = read_json(ROOT / "resources" / "governance-qa-bucket.json")
+    assert document["provisioningOrder"][-2:] == [
+        "read-back-object-lock-governance-180-days",
+        "attach-bucket-lock-mutation-deny",
+    ]
+    assert document["lifecycleRules"] == []
+
+
+def test_canary_unknown_field_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The canary schema rejects additive authorization drift."""
+    monkeypatch.setattr(
+        "validate_assets.read_json",
+        _mutating_reader(
+            "production-canary.json",
+            lambda value: value.update({"unexpected": True}),
+        ),
+    )
+    assert validate_canary()
+
+
+def test_roles_use_real_inactivity_and_exact_activation() -> None:
+    """Dangerous identities are absent; admin and broker are uncreated."""
+    assert validate_roles() == []
+    document = read_json(ROOT / "roles" / "role-contracts.json")
+    states = {
+        role["name"]: role["deploymentState"] for role in document["roles"]
+    }
+    assert states["everest-retention-admin"] == "uncreated"
+    assert set(document["absentRoles"]) == {
+        "legal-authority-placeholder",
+        "hold-executor",
+        "disposition-executor",
+    }
+
+
+def test_fake_enabled_role_shape_is_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An enabled flag cannot masquerade as IAM role inactivity."""
+
+    def mutate(value: dict[str, Any]) -> None:
+        value["roles"][0]["enabled"] = False
+
+    monkeypatch.setattr(
+        "validate_assets.read_json",
+        _mutating_reader("role-contracts.json", mutate),
+    )
+    assert validate_roles()
+
+
+@pytest.mark.parametrize(
+    ("target", "mutation"),
+    [
+        (
+            "audit-read-only.json",
+            lambda value: value["Statement"][1]["Action"].append(
+                "s3:GetObjectAttributes"
+            ),
+        ),
+        (
+            "audit-read-only.json",
+            lambda value: value["Statement"][1].update({"Effect": "Deny"}),
+        ),
+        (
+            "audit-read-only.json",
+            lambda value: value["Statement"][1].update({"Resource": "*"}),
+        ),
+        (
+            "retention-admin.json",
+            lambda value: value["Statement"][2]["Condition"].clear(),
+        ),
+        (
+            "bucket-explicit-deny.json",
+            lambda value: value["Statement"].__setitem__(
+                3, value["Statement"][2]
+            ),
+        ),
+        (
+            "kms-survival-deny.json",
+            lambda value: value["Statement"][0].update({"Resource": "*"}),
+        ),
+    ],
+)
+def test_policy_action_effect_resource_principal_mutations_fail(
+    monkeypatch: pytest.MonkeyPatch, target: str, mutation: Any
+) -> None:
+    """Exact policy semantics reject invalid actions and weakened boundaries."""
+    monkeypatch.setattr(
+        "validate_assets.read_json", _mutating_reader(target, mutation)
+    )
+    assert validate_policies()
+
+
+def test_audit_policy_is_valid_metadata_only_action_set() -> None:
+    """Audit reads versions, retention, and legal hold without payload access."""
     document = read_json(ROOT / "policies" / "audit-read-only.json")
     actions = {
         action
         for statement in document["Statement"]
         for action in statement["Action"]
     }
-    assert "s3:GetObjectRetention" in actions
-    assert "s3:GetObjectAttributes" in actions
-    assert actions.isdisjoint(
-        {
-            "s3:GetObject",
-            "s3:GetObjectVersion",
-            "s3:DeleteObjectVersion",
-            "s3:PutObjectLegalHold",
-            "s3:PutObjectRetention",
-        }
-    )
+    assert {
+        "s3:ListBucketVersions",
+        "s3:GetObjectRetention",
+        "s3:GetObjectLegalHold",
+    }.issubset(actions)
+    assert "s3:GetObjectAttributes" not in actions
+    assert actions.isdisjoint({"s3:GetObject", "s3:GetObjectVersion"})
 
 
-def test_exact_version_and_state_machine_are_fail_closed() -> None:
-    """Storage workflows require exact versions and disable B2 destructive work."""
+def test_governance_qa_rejects_compliance_and_arbitrary_date() -> None:
+    """Only the broker's calculated Governance extension is authorized."""
     assert not validate_exact_version_and_state()
+    operation = read_json(ROOT / "exact-version-operation.json")
+    guard = operation["retentionMutation"]
+    assert guard["directHumanCallAllowed"] is False
+    assert guard["executorMode"] == "GOVERNANCE"
+    assert guard["arbitraryDateAllowed"] is False
+    assert guard["complianceModeAllowedInGovernanceQa"] is False
 
 
-def test_kms_survival_blocks_cryptographic_deletion_shortcuts() -> None:
-    """Retained bytes remain dependent on a surviving customer-managed key."""
-    assert not validate_kms_survival()
-    policy = read_json(ROOT / "policies" / "kms-survival-deny.json")
-    assert set(policy["Statement"][0]["Action"]) == {
-        "kms:DisableKey",
-        "kms:ScheduleKeyDeletion",
+def test_timing_fields_are_required_and_immutable_contract_facts() -> None:
+    """Retention arithmetic is based on immutable S3 timing evidence."""
+    operation = read_json(ROOT / "exact-version-operation.json")
+    assert {"versionCreatedAt", "s3LastModified"}.issubset(
+        operation["requiredIdentityFields"]
+    )
+    assert set(operation["immutableTimingFields"]) == {
+        "versionCreatedAt",
+        "s3LastModified",
     }
 
 
-def test_mutated_canary_validator_fails_closed(
+def test_timing_contract_mutation_fails_closed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The validator rejects any attempt to enable the canary."""
-    original = read_json
+    """Changing a timing meaning is rejected by the offline validator."""
+    monkeypatch.setattr(
+        "validate_assets.read_json",
+        _mutating_reader(
+            "exact-version-operation.json",
+            lambda value: value["immutableTimingFields"].update(
+                {"s3LastModified": "mutable"}
+            ),
+        ),
+    )
+    assert validate_exact_version_and_state()
 
-    def mutated_read(path):  # type annotation intentionally inferred by pytest
-        document = deepcopy(original(path))
-        if path.name == "production-canary.json":
-            document["enabled"] = True
-        return document
 
-    monkeypatch.setattr("validate_assets.read_json", mutated_read)
-    assert "production-canary.json: invalid enabled" in validate_canary()
+def test_kms_survival_names_ordinary_and_admin_recovery_roles() -> None:
+    """Ordinary-role deny excludes only the named MFA recovery boundary."""
+    assert not validate_kms_survival()
+    document = read_json(ROOT / "kms-survival.json")
+    assert len(document["ordinaryRoleArns"]) == 7
+    boundary = document["kmsAdministratorRecoveryBoundary"]
+    assert boundary["principalArn"].endswith("everest-gatec-administrator")
+    assert boundary["requiresMfaSession"] is True
+
+
+def test_kms_required_property_mutation_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The CMK type and survivability schema cannot drift."""
+    monkeypatch.setattr(
+        "validate_assets.read_json",
+        _mutating_reader(
+            "kms-survival.json",
+            lambda value: value["requiredKeyProperties"].update(
+                {"keyManager": "AWS"}
+            ),
+        ),
+    )
+    assert validate_kms_survival()

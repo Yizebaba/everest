@@ -1,7 +1,7 @@
 {
   "accountId": "982408502231",
   "region": "ap-south-1",
-  "policyVersion": "2026-08-24.b2.v1",
+  "policyVersion": "2026-08-25.b2.v2",
   "kmsKeyArn": "${B2_KMS_KEY_ARN}",
   "governanceQa": {
     "bucketName": "zhufengxiangmu-b2-qa-982408502231",
@@ -28,10 +28,14 @@
   "operationalExtensionDays": 730,
   "lifecycleRules": [],
   "roles": {
-    "retentionAdmin": "retention-admin",
-    "legalAuthorityPlaceholder": "legal-authority-placeholder",
-    "holdExecutor": "hold-executor",
-    "dispositionExecutor": "disposition-executor",
-    "auditRead": "retention-audit-read-only"
+    "retentionBroker": "everest-retention-broker",
+    "retentionAdmin": "everest-retention-admin",
+    "auditRead": "everest-retention-audit-read-only",
+    "kmsAdministratorRecovery": "everest-gatec-administrator"
+  },
+  "principals": {
+    "brokerExecutorPrincipalArn": "${BROKER_EXECUTOR_PRINCIPAL_ARN}",
+    "auditHumanPrincipalArn": "${AUDIT_HUMAN_PRINCIPAL_ARN}",
+    "kmsAdministratorRecoveryArn": "arn:aws:iam::982408502231:role/everest/admin/everest-gatec-administrator"
   }
 }

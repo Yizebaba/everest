@@ -3,7 +3,9 @@
     "artifactId",
     "bucketName",
     "objectKey",
-    "versionId"
+    "versionId",
+    "versionCreatedAt",
+    "s3LastModified"
   ],
   "versionId": {
     "nullable": false,
@@ -21,6 +23,17 @@
   ],
   "unversionedDeleteAllowed": false,
   "deleteMarkerCompletesDisposition": false,
+  "immutableTimingFields": {
+    "versionCreatedAt": "authoritative-version-creation-time-used-for-retention-arithmetic",
+    "s3LastModified": "immutable-s3-readback-time-provenance"
+  },
+  "retentionMutation": {
+    "directHumanCallAllowed": false,
+    "executorMode": "GOVERNANCE",
+    "approvedDateRule": "max(versionCreatedAt+duration,acquiredAt+duration)",
+    "arbitraryDateAllowed": false,
+    "complianceModeAllowedInGovernanceQa": false
+  },
   "s3IsEnforcementAuthority": true,
   "databaseIsProjection": true
 }

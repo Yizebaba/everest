@@ -12,14 +12,24 @@
       "Resource": "arn:aws:s3:::${RETENTION_BUCKET}"
     },
     {
-      "Sid": "ReadAndExtendExactVersionRetention",
+      "Sid": "ReadExactVersionRetentionMetadata",
       "Effect": "Allow",
       "Action": [
         "s3:GetObjectLegalHold",
-        "s3:GetObjectRetention",
-        "s3:PutObjectRetention"
+        "s3:GetObjectRetention"
       ],
       "Resource": "arn:aws:s3:::${RETENTION_BUCKET}/*"
+    },
+    {
+      "Sid": "ExtendExactVersionGovernanceRetention",
+      "Effect": "Allow",
+      "Action": "s3:PutObjectRetention",
+      "Resource": "arn:aws:s3:::${RETENTION_BUCKET}/*",
+      "Condition": {
+        "StringEquals": {
+          "s3:object-lock-mode": "GOVERNANCE"
+        }
+      }
     }
   ]
 }

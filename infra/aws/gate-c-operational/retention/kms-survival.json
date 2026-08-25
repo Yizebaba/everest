@@ -14,6 +14,22 @@
     "kms:DisableKey",
     "kms:ScheduleKeyDeletion"
   ],
+  "ordinaryRoleArns": [
+    "arn:aws:iam::982408502231:role/everest/everest-writer-ecmwf-ifs",
+    "arn:aws:iam::982408502231:role/everest/everest-writer-noaa-gfs",
+    "arn:aws:iam::982408502231:role/everest/everest-writer-dwd-icon",
+    "arn:aws:iam::982408502231:role/everest/everest-writer-ecmwf-aifs",
+    "arn:aws:iam::982408502231:role/everest/everest-retention-broker",
+    "arn:aws:iam::982408502231:role/everest/everest-retention-admin",
+    "arn:aws:iam::982408502231:role/everest/everest-retention-audit-read-only"
+  ],
+  "kmsAdministratorRecoveryBoundary": {
+    "principalArn": "arn:aws:iam::982408502231:role/everest/admin/everest-gatec-administrator",
+    "ordinaryRole": false,
+    "mayAdministerKey": true,
+    "requiresMfaSession": true,
+    "requiresSeparateManagerApprovalForDisableOrDeletion": true
+  },
   "deletionPreconditions": [
     "version-aware-zero-dependency-inventory",
     "no-active-retention",

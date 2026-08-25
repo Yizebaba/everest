@@ -1,38 +1,42 @@
 {
   "path": "/everest/",
+  "activationTransition": {
+    "initialState": "uncreated",
+    "gate": "independent-governance-qa-activation-approval",
+    "steps": [
+      "create-everest-retention-broker-with-approved-service-trust",
+      "create-everest-retention-admin-trusting-only-retention-broker",
+      "attach-exact-governance-only-retention-admin-policy",
+      "verify-no-human-can-assume-retention-admin",
+      "enable-approved-calculated-date-command-in-broker",
+      "run-negative-arbitrary-date-and-compliance-mode-tests"
+    ],
+    "rollback": "delete-unattached-roles-and-policies-before-any-protected-object"
+  },
+  "absentRoles": [
+    "legal-authority-placeholder",
+    "hold-executor",
+    "disposition-executor"
+  ],
   "roles": [
     {
-      "name": "retention-admin",
-      "enabled": false,
-      "trustPolicy": "${APPROVED_HUMAN_MFA_TRUST_POLICY}",
-      "humanMfaRequired": true,
+      "name": "everest-retention-broker",
+      "deploymentState": "uncreated",
+      "trustPrincipal": "${BROKER_EXECUTOR_PRINCIPAL_ARN}",
+      "humanAssumptionAllowed": false,
+      "policy": null
+    },
+    {
+      "name": "everest-retention-admin",
+      "deploymentState": "uncreated",
+      "trustPrincipal": "arn:aws:iam::982408502231:role/everest/everest-retention-broker",
+      "humanAssumptionAllowed": false,
       "policy": "policies/retention-admin.json"
     },
     {
-      "name": "legal-authority-placeholder",
-      "enabled": false,
-      "trustPolicy": null,
-      "humanPrincipal": null,
-      "policy": "policies/legal-authority-deny-only.json"
-    },
-    {
-      "name": "hold-executor",
-      "enabled": false,
-      "trustPolicy": null,
-      "humanPrincipal": null,
-      "policy": "policies/hold-executor-disabled.json"
-    },
-    {
-      "name": "disposition-executor",
-      "enabled": false,
-      "trustPolicy": null,
-      "humanPrincipal": null,
-      "policy": "policies/disposition-executor-disabled.json"
-    },
-    {
-      "name": "retention-audit-read-only",
-      "enabled": false,
-      "trustPolicy": "${APPROVED_HUMAN_MFA_TRUST_POLICY}",
+      "name": "everest-retention-audit-read-only",
+      "deploymentState": "uncreated",
+      "trustPrincipal": "${AUDIT_HUMAN_PRINCIPAL_ARN}",
       "humanMfaRequired": true,
       "policy": "policies/audit-read-only.json"
     }
