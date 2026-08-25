@@ -1,5 +1,13 @@
 "use client";
 
+// Cesium resolves its Assets/Workers/Widgets relative to CESIUM_BASE_URL.
+// They are copied to /public/cesium so the browser loads them over http,
+// not from node_modules (which browsers block as file://).
+if (typeof window !== "undefined") {
+  (window as unknown as { CESIUM_BASE_URL?: string }).CESIUM_BASE_URL =
+    "/cesium/";
+}
+
 import { useEffect, useRef, useState } from "react";
 import {
   Cartesian2,
@@ -71,33 +79,39 @@ export function EverestScene({
     if (!container) {
       return undefined;
     }
-    // OSM standard raster tiles (interactive viewport-only use, per the OSMF
-    // Tile Usage Policy). Attribution is shown in the scene footer.
-    const baseLayer = new UrlTemplateImageryProvider({
-      url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-      credit: "© OpenStreetMap contributors",
-    });
-    const viewer = new Viewer(container, {
-      baseLayer: false,
-      animation: false,
-      timeline: false,
-      baseLayerPicker: false,
-      geocoder: false,
-      homeButton: false,
-      sceneModePicker: false,
-      navigationHelpButton: false,
-      infoBox: false,
-      fullscreenButton: false,
-    });
-    viewer.imageryLayers.addImageryProvider(baseLayer);
-    viewer.scene.camera.setView({
-      destination: Cartesian3.fromDegrees(
-        AOI_CENTER.longitude,
-        AOI_CENTER.latitude,
-        230000,
-      ),
-      orientation: { heading: 0, pitch: -Math.PI / 2, roll: 0 },
-    });
+    let viewer: Viewer | undefined;
+    try {
+      // OSM standard raster tiles (interactive viewport-only use, per the OSMF
+      // Tile Usage Policy). Attribution is shown in the scene footer.
+      viewer = new Viewer(container, {
+        baseLayer: false,
+        animation: false,
+        timeline: false,
+        baseLayerPicker: false,
+        geocoder: false,
+        homeButton: false,
+        sceneModePicker: false,
+        navigationHelpButton: false,
+        infoBox: false,
+        fullscreenButton: false,
+      });
+      const baseLayer = new UrlTemplateImageryProvider({
+        url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+        credit: "© OpenStreetMap contributors",
+      });
+      viewer.imageryLayers.addImageryProvider(baseLayer);
+      viewer.scene.camera.setView({
+        destination: Cartesian3.fromDegrees(
+          AOI_CENTER.longitude,
+          AOI_CENTER.latitude,
+          230000,
+        ),
+        orientation: { heading: 0, pitch: -Math.PI / 2, roll: 0 },
+      });
+    } catch (error) {
+      console.error("Cesium viewer init failed:", error);
+      return undefined;
+    }
     viewerRef.current = viewer;
 
     void (async () => {
@@ -134,7 +148,7 @@ export function EverestScene({
     })();
 
     return () => {
-      viewer.destroy();
+      viewer?.destroy();
       viewerRef.current = null;
     };
   }, [webglOk]);
@@ -189,21 +203,29 @@ export function EverestScene({
       terrainTilesetRef.current = null;
     }
     if (showTerrain) {
-      const tileset = new Cesium3DTileset({
-        url: "/tiles/tileset.json",
-        maximumScreenSpaceError: 16,
-      } as never);
-      terrainTilesetRef.current = tileset;
-      viewer.scene.primitives.add(tileset);
-      const tilesetAny = tileset as unknown as {
-        readyPromise: Promise<unknown>;
-        boundingSphere: { center: Cartesian3 };
-      };
-      void tilesetAny.readyPromise.then(() => {
-        viewer.camera.flyTo({
-          destination: tilesetAny.boundingSphere.center,
+      // Cesium resource/worker wiring can fail under webpack; never let it
+      // crash the whole page — the scene degrades to the base view instead.
+      try {
+        const tileset = new Cesium3DTileset({
+          url: "/tiles/tileset.json",
+          maximumScreenSpaceError: 16,
+        } as never);
+        terrainTilesetRef.current = tileset;
+        viewer.scene.primitives.add(tileset);
+        const tilesetAny = tileset as unknown as {
+          readyPromise?: Promise<unknown>;
+          boundingSphere?: { center: Cartesian3 };
+        };
+        void tilesetAny.readyPromise?.then(() => {
+          if (tilesetAny.boundingSphere) {
+            viewer.camera.flyTo({
+              destination: tilesetAny.boundingSphere.center,
+            });
+          }
         });
-      });
+      } catch (error) {
+        console.error("terrain tileset load failed:", error);
+      }
     }
   }, [showTerrain]);
 
@@ -223,12 +245,16 @@ export function EverestScene({
       }
     }
     if (showSatellite) {
-      const provider = new SingleTileImageryProvider({
-        url: "/satellite/everest-rgb.png",
-        rectangle: Rectangle.fromDegrees(86.8, 27.85, 87.05, 28.05),
-      });
-      const layer = viewer.imageryLayers.addImageryProvider(provider);
-      layer.alpha = 0.85;
+      try {
+        const provider = new SingleTileImageryProvider({
+          url: "/satellite/everest-rgb.png",
+          rectangle: Rectangle.fromDegrees(86.8, 27.85, 87.05, 28.05),
+        });
+        const layer = viewer.imageryLayers.addImageryProvider(provider);
+        layer.alpha = 0.85;
+      } catch (error) {
+        console.error("satellite imagery load failed:", error);
+      }
     }
   }, [showSatellite]);
 

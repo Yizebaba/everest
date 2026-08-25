@@ -53,3 +53,4 @@ credentials
 # Generated Cesium 3D Tiles (rebuild from GLO-30 GeoTIFF via EV-TERRAIN-002 tooling)
 apps/web/public/tiles/
 apps/web/public/satellite/everest-rgb.png
+apps/web/public/cesium/
