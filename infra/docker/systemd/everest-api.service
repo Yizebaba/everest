@@ -1,0 +1,17 @@
+[Unit]
+Description=Everest backend API (RUNTIME-006)
+After=network.target docker.service
+Wants=docker.service
+
+[Service]
+Type=simple
+WorkingDirectory=/mnt/d/Everest/apps/api
+EnvironmentFile=/root/.everest/db.env
+Environment=PYTHONPATH=/mnt/d/Everest:/mnt/d/Everest/apps/api:/mnt/d/Everest/packages/weather_ingestion_contract
+Environment=EVEREST_API_PORT=50149
+ExecStart=/usr/bin/python3 -c "import os; os.environ['EVEREST_DATABASE_URL']='postgresql+psycopg://everest:'+os.environ['EVEREST_DB_PASSWORD']+'@127.0.0.1:56021/everest'; import run_dev; run_dev.main()"
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
