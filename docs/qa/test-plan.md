@@ -3034,10 +3034,11 @@ GLO-30 terrain, Everest AWS station, Himawari satellite) against
 
 **PASS for the recorded `connected` scope.** The three source packages
 (connector, parser, QC, real_retrieval, tests) and their backend normalizers/
-routes are implemented and tested. They remain `connected`, **not** `verified`:
-no canonical row has yet been ingested into the persistent database for these
-sources, and independent data-quality acceptance for full persisted records is
-not claimed.
+routes are implemented and tested, and real canonical records are now persisted
+into the persistent database and served by the API (2026-08-25). They remain
+`connected` (not `verified`) pending full per-record independent data-quality
+acceptance; Everest AWS remains display/research-only (commercial NOT
+authorized).
 
 ## Checks executed
 
@@ -3047,9 +3048,9 @@ not claimed.
 | `services/satellite/himawari/tests/test_himawari.py` | **PASS** |
 | `services/weather/everest_aws/tests/test_everest_aws.py` | **PASS** |
 | `apps/api/tests/test_sources_normalizers.py` | **PASS** — 3 passed |
-| `GET /api/terrain/tile?lat=27.98806&lon=86.92528` | **HTTP 200** (no tile persisted yet) |
-| `GET /api/observations/current` | **HTTP 200** (no observations persisted yet) |
-| `GET /api/satellite/segments` | **HTTP 200** (no segments persisted yet) |
+| `GET /api/terrain/tile?lat=27.98806&lon=86.92528` | **HTTP 200** — GLO-30 tile persisted and returned |
+| `GET /api/observations/current` | **HTTP 200** — station observations returned |
+| `GET /api/satellite/segments` | **HTTP 200** — Himawari segment returned |
 
 ## Source facts (from handoff, verified against official docs 2026-08-24)
 

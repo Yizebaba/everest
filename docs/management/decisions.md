@@ -2802,3 +2802,34 @@ The frontend runs in the local WSL/Docker runtime and calls only the Everest
 backend (never external providers). It is not exposed publicly. Cesium/3D
 terrain, observation, satellite, OSM, and Risk work remain separately
 authorized future scope.
+
+## EV-SOURCES-ADR019-INGEST: persisted ADR-019 real-data ingestion
+
+**Executed:** 2026-08-25 (Everest Manager)  
+**Status:** COMPLETE for the local persistent database  
+**Scope:** Persist the three ADR-019 sources (terrain, Everest AWS station,
+Himawari satellite) into the running PostgreSQL and verify the API serves them.
+
+### Data persisted
+
+- **Terrain**: `Copernicus_DSM_COG_10_N27_00_E086_00_DEM` (GLO-30), EPSG:4326,
+  3600x3600, elevation 187.5-8737.8 m, covering the Everest AOI tile.
+- **Everest AWS**: first rows for Base Camp (2025-10-23, -4.833C), Camp 2
+  (2025-10-23, -13.06C), South Col (2026-04-26, -0.304C) with QC flags.
+- **Himawari**: band 3 segment 1, Himawari FLDK, SHA `4d3971de04b0...`.
+
+### Verified API responses
+
+- `GET /api/terrain/tile?latitude=27.98806&longitude=86.92528` — HTTP 200 with
+  tile bounds/resolution/elevation.
+- `GET /api/observations/current` — HTTP 200 with station observations.
+- `GET /api/satellite/segments` — HTTP 200 with the Himawari segment.
+
+### Boundary
+
+These sources are now `connected` with persisted canonical records served by
+the API; independent data-quality acceptance for every retained record and
+full `verified` lifecycle is not claimed in this record. Everest AWS remains
+display/research-only (commercial NOT authorized). OSM, Risk, additional
+satellite/terrain, and Cesium 3D Tiles/PostGIS rendering remain separately
+authorized future scope.
