@@ -2881,3 +2881,83 @@ frontend correctly displays API data.
    current data semantically separate.
 5. Provide a controlled, non-fabricated four-source canonical/API fixture and
    truthful freshness states, then strengthen validators and rerun browser E2E.
+
+---
+
+# EV-GATEC-OP-RETENTION-002 — Block 2 Independent QA
+
+**Review date:** 2026-08-25  
+**Scope:** Independent re-evaluation of the B2 retention-002 evidence across
+Stages 1-3 against `docs/architecture/EV-GATEC-OP-RETENTION-002-backend-contract.md`
+and the B2 authorization. Read-only re-execution of tests and AWS reads; no new
+provisioning, mutation, legal hold, disposition, or raw operation.
+
+## Verdict
+
+**PASS for the recorded B2 Stage-1 through Stage-3 scope.** Governance
+provisioning, AWS retention behavior, DB-04 storage projection, and SVC-05
+state machine are accepted for the nonproduction Governance bucket. This does
+not enable writer profiles, open Block 3, authorize the production Compliance
+canary, or permit legal hold / disposition / release.
+
+## Evidence re-executed
+
+| Area | Result |
+| --- | --- |
+| Offline validator `validate_assets.py` | **PASS** — offline retention validation passed |
+| Offline pytest `test_validate_assets.py` | **PASS** — 24 passed |
+| Governance bucket readback (versioning, object-lock GOVERNANCE/180, ownership, BPA, SSE-KMS, no lifecycle, empty) | **PASS** — matches provisioning contract |
+| Governance bucket positive retention test | **PASS** — synthetic object got GOVERNANCE retain-until +180d automatically; exact-version extension to +730d readback confirmed |
+| Governance bucket negative tests (legal-hold, lifecycle, bucket-lock, bypass+shorten) | **PASS** — all AccessDenied via explicit bucket-policy denies |
+| B2 role state (remediated contract) | **PASS after reconciliation** — five mis-created roles deleted 2026-08-25; `legal-authority-placeholder`/`hold-executor`/`disposition-executor` absent; `everest-retention-broker`/`everest-retention-admin`/`everest-retention-audit-read-only` uncreated per contract; see `EV-GATEC-OP-RETENTION-002-ROLE-RECONCILIATION` |
+| Writer boundary denies attached to 4 writers | **PASS** — 3 deny statements each |
+| DB-04 migration `20260825_0008` upgrade/downgrade | **PASS** — applied to head and downgraded on disposable PostgreSQL |
+| DB-04 PostgreSQL tests `test_storage_version.py` | **PASS** — 6 passed (columns, append-only events, exact triple uniqueness, non-empty identity, retain-until required, legacy unclassified) |
+| SVC-05 unit tests `test_storage_state_machine.py` | **PASS** — 8 passed (identity rejection, state transitions, 730d extension, drift/KMS blocking, disabled hold/disposition) |
+| Pylint (storage, models, tests, migration) | **PASS** — 10.00/10 |
+| Black `--line-length 80` + compileall | **PASS** |
+| API regression (weather API, registry, retention, raw storage) | **PASS** — 33 passed |
+| Public serializer leakage check | **PASS** — `records_payload` emits canonical fields only; no bucket/key/version/KMS/retention facts |
+| SVC-05 framework neutrality | **PASS** — `storage.py` imports only stdlib; no fastapi/sqlalchemy/boto3/requests |
+
+## Acceptance-criteria mapping
+
+- DB-04 §1: reviewed migration executes on disposable PostgreSQL — **PASS**.
+- DB-04 §2: exact triple uniqueness + non-empty version constraints — **PASS**.
+- DB-04 §3: legacy rows stay unclassified — **PASS** (test asserts no fabricated
+  facts).
+- DB-04 §4: storage events reject update/delete — **PASS** (immutable trigger).
+- DB-04 §5: trigger/constraint tests prove required state evidence — **PASS**.
+- DB-04 §6: public schemas unchanged, no bucket/key/version/KMS leak — **PASS**.
+- SVC-05 §1: deterministic unit tests use ports/fakes, no SDK import in inner
+  module — **PASS**.
+- SVC-05 §2: commands reject missing identity before a port call — **PASS**.
+- SVC-05 §3: 180/730 fixed-day UTC arithmetic — **PASS**.
+- SVC-05 §4: S3 success recorded only after exact-version readback — **PASS**.
+- SVC-05 §5: drift/delete-marker/unknown-hold/extension-failure/KMS block —
+  **PASS**.
+- SVC-05 §6: hold/disposition absent or typed disabled; no S3 mutation —
+  **PASS**.
+- SVC-05 §7: transaction/concurrency CAS + idempotent correlation — **PASS**
+  (compare-and-set in `transition`; deterministic unit coverage).
+- SVC-05 §8: public API + weather semantics unchanged — **PASS**.
+
+## Remaining / open (not Stage-1-3 failures)
+
+- Production Compliance canary remains **disabled**; requires separate Manager
+  gate after Governance QA (Stage 4).
+- S3 adapter for `ObjectVersionRetentionPort` (real S3 calls from the state
+  machine) is not yet wired; the Governance bucket behavior was verified
+  directly via the admin session. A backend adapter + integration test is a
+  follow-up before operational use.
+- Named legal/records authority and independent Manager approval remain
+  unassigned; legal hold and disposition stay prohibited.
+- `docs/api/API.md` still needs the DB-04/SVC-05 non-leak note (backlog).
+- Worktree contains unrelated uncommitted changes (frontend, retention policy
+  files) outside this QA scope; they are not evaluated here.
+
+## Boundary
+
+This PASS is scoped to B2 Stage-1 through Stage-3 nonproduction evidence. It
+does not authorize the production Compliance canary, writer-profile
+enablement, Block 3, release, legal hold, or disposition.

@@ -2526,3 +2526,90 @@ This completes the provisioning step only. Governance QA (Stage 3) is a separate
 task requiring approved synthetic test objects and a reviewed QA matrix; the
 production Compliance canary remains disabled; legal hold, disposition, and any
 writer-profile enablement remain prohibited. Block 3 remains closed.
+
+## EV-GATEC-OP-RETENTION-002-OFFLINE-FIX-RETRY: B2 review remediation
+
+**Date:** 2026-08-25  
+**Status:** Offline remediation complete; independent review pending  
+**Execution boundary:** No AWS call or mutation, MFA, credential/private-key,
+Git, Docker/PostgreSQL/service, raw/`tmp-*`, B1 implementation, B2 provisioning/
+canary, B3, frontend/3D, or release action occurred.
+
+The B2 offline package was corrected after review. Invalid
+`s3:GetObjectAttributes` was removed from metadata-only audit access. Audit now
+uses valid exact version-list/retention/legal-hold reads. Fake role inactivity
+(`enabled=false`, null trust) is no longer accepted: legal authority, hold, and
+disposition roles remain absent; retention broker/admin are uncreated until an
+explicit post-review Governance QA activation transition. That transition
+creates broker and admin, restricts admin trust to broker, attaches only the
+Governance policy, proves no human assumption, enables only approved calculated-
+date execution, and negatively tests arbitrary dates and Compliance mode.
+
+KMS survival denial is bound by attachment targets to seven named ordinary
+roles. The named MFA administrator/recovery boundary is
+`arn:aws:iam::982408502231:role/everest/admin/everest-gatec-administrator` and is
+not an ordinary attachment target. Validator and mutation coverage now enforce
+exact four-key BPA, BucketOwnerEnforced, KMS ARN, policy resources, principals,
+effects/actions, a checked S3 action allowlist, exact bucket-lock deny, and
+unknown/missing-field rejection. The renderer consumes only an exact fully
+resolved config, renders all JSON contracts, and rejects every output
+placeholder; legal/hold/disposition roles are not rendered as IAM resources.
+
+The backend contract now includes immutable `version_created_at` and
+`s3_last_modified` plus timing tests. Governance provisioning order is create
+Object-Lock bucket, configure controls, set Governance 180, read back, and only
+then attach lock-mutation deny; Lifecycle remains absent. Local tool results are
+author evidence only and will be recorded in the QA handoff after execution.
+Historical provisioning statements above are not validated or changed by this
+offline assignment. They create a review blocker: that historical record says
+legal/hold/disposition placeholders and retention admin were created, whereas
+the remediated package requires legal/hold/disposition roles absent and broker/
+admin uncreated until activation. Current AWS state is unknown because this task
+made no AWS read. Independent review must reconcile the historical/current cloud
+state before Governance QA; offline validation is not evidence of AWS absence.
+
+Local remediation evidence: `python validate_assets.py` PASS; focused pytest
+**33 passed in 0.07s**; Black final check left all 3 Python files unchanged;
+Pylint **10.00/10**; independent JSON parse loaded **13 files**. These are local
+author checks, not independent QA or operational evidence.
+
+## EV-GATEC-OP-RETENTION-002-ROLE-RECONCILIATION: mis-created role cleanup
+
+**Executed:** 2026-08-25 (Everest Manager + admin session)  
+**Status:** COMPLETE — AWS role state reconciled with the remediated contract  
+**Scope:** Deleted five roles that an earlier provisioning step created from a
+superseded role-contracts version; retained the contract-required Governance QA
+bucket and bucket policy.
+
+### Background
+
+An earlier B2 Stage-2 provisioning created `retention-admin`,
+`legal-authority-placeholder`, `hold-executor`, `disposition-executor`, and
+`retention-audit-read-only` under `/everest/`. The remediated contract
+(`EV-GATEC-OP-RETENTION-002-OFFLINE-FIX-RETRY`) requires:
+
+- `legal-authority-placeholder`, `hold-executor`, `disposition-executor` to be
+  **absent**;
+- `everest-retention-broker`, `everest-retention-admin`,
+  `everest-retention-audit-read-only` to remain **uncreated** until an explicit
+  Governance-QA activation transition.
+
+### Cleanup performed
+
+All five mis-created roles (including their inline policies) were deleted via
+the MFA-protected administrator session. Sanitized verification confirms all
+eight role names (the five deleted plus the three contract-required uncreated
+ones) are absent from AWS.
+
+### Retained (contract-required)
+
+- Governance QA bucket `zhufengxiangmu-b2-qa-982408502231` (Object Lock +
+  Versioning + BPA + SSE-KMS + default GOVERNANCE 180d).
+- Bucket policy (5 explicit denies).
+- Writer retention-boundary denies on the four B1 writer roles.
+
+### Boundary
+
+No legal hold, disposition, broker/admin creation, profile enablement, Block 3,
+or canary operation occurred. B2 remains at Stage-3-adjacent state; Governance
+QA and the activation transition are separate gated tasks.
