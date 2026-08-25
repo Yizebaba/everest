@@ -2764,3 +2764,41 @@ This records the release decision for the local runtime only. It does not
 authorize a shared/production deployment, a public endpoint, or any
 irreversible production operation. Frontend integration (existing `apps/web`)
 is the next step and remains a separately authorized scope.
+
+## EV-UI-001-INTEGRATION: frontend integration validation
+
+**Executed:** 2026-08-25 (Everest Manager)  
+**Status:** COMPLETE for the local WSL/Docker runtime  
+**Scope:** Existing `apps/web` (Next.js + Cesium) connected to the persistent
+backend API; verified end to end.
+
+### Findings and fixes
+
+- Ports `48237`/`48240`/`48241` are blocked by the Windows host (bind error
+  `WinError 10013`; not in the `netsh` excluded list but unreservedly
+  un-bindable in this WSL2 environment). Frontend moved to the verified-bindable
+  non-standard port **`50151`**.
+- Updated `apps/web/package.json` (`dev`/`start`), `apps/web/start-dev.cmd`,
+  and `apps/web/.env.example`; backend CORS default origins now allow
+  `http://localhost:50151`.
+- Removed UTF-8 BOM from `package.json` / `start-dev.cmd` / `.env.example`
+  (PowerShell `Set-Content` had injected a BOM that broke JSON parsing).
+
+### Validation evidence
+
+- Frontend unit tests: **34 passed** (`vitest`).
+- `eslint .`: clean.
+- `next build`: **success** (4/4 static pages).
+- Dev server `http://localhost:50151`: **HTTP 200**, `<title>Everest · Summit
+  Window</title>` renders; Cesium scene delegates to client rendering (expected).
+- Backend CORS preflight from origin `http://localhost:50151`: **200** with
+  `allow-origin`, `allow-methods: GET, OPTIONS`, and `X-Correlation-ID` header.
+- Authenticated data request from that origin: forecast API returns persisted
+  records.
+
+### Boundary
+
+The frontend runs in the local WSL/Docker runtime and calls only the Everest
+backend (never external providers). It is not exposed publicly. Cesium/3D
+terrain, observation, satellite, OSM, and Risk work remain separately
+authorized future scope.

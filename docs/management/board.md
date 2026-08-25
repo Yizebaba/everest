@@ -57,9 +57,12 @@ stages.
 | EV-GATEC-OP-QA-009 | Independent operational QA | COMPLETE (2026-08-25): PASS for recorded nonproduction runtime; live probes + block evidence re-confirmed | Blocks 1-8 | `docs/qa/test-plan.md` |
 | EV-GATEC-OP-RELEASE-010 | Release gate definition | DEFINED + Manager decision recorded 2026-08-25: WSL/Docker local runtime, not public; CloudTrail delivery confirmed; no shared/production deployment | Gate C-Operational QA pass (QA-009) | `docs/architecture/EV-GATEC-OP-RELEASE-010.md`, `docs/management/decisions.md` |
 
-Only one block may be `in progress`. The read-only frontend, GIS-3D/Cesium,
-and later data domains remain unauthorized and are not part of the active
-implementation scope.
+Only one block may be `in progress`. The read-only frontend is now integrated
+(port 50151, CORS-verified); GIS-3D/Cesium scene exists in `apps/web`; ADR-019
+sources (terrain, Everest AWS station, Himawari satellite) are `connected` with
+QA-recorded connected-scope PASS. OSM, Risk, additional satellite/terrain, and
+persisted ADR-019 record ingestion into the running database remain future,
+separately authorized work.
 
 ### ADR-015 endpoint evidence boundary
 
