@@ -2,8 +2,10 @@
 
 **Prepared:** 2026-08-24 (Everest Manager session)  
 **For:** Independent QA (`EV-GATEC-OP-QA-009` dependent)  
-**Status of source work:** Block 1 human paths COMPLETE and verified; awaiting
-independent QA verdict.
+**Status of source work:** Block 1 human paths COMPLETE and verified. Independent
+QA re-evaluation recorded 2026-08-25 in `docs/qa/test-plan.md`
+(`EV-GATEC-OP-ACL-001 — Block 1 Independent QA Re-Evaluation`): **PASS** for the
+recorded nonproduction scope; residual register carried forward.
 
 This package is sanitized. It contains no MFA codes, access keys, secrets,
 session tokens, or private-key material. All evidence is already recorded in

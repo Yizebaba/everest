@@ -2690,3 +2690,67 @@ be checked from configuration presence alone:
 **Acceptance boundary:** Offline PASS may authorize review/provisioning planning
 only. It cannot close B2, Gate C-Operational, or B1; cannot enable a role; and
 cannot authorize legal hold, disposition, canary, B3, or release.
+
+---
+
+# EV-GATEC-OP-ACL-001 — Block 1 Independent QA Re-Evaluation
+
+**Review date:** 2026-08-25  
+**Scope:** Independent re-evaluation of the Block 1 evidence package
+(`docs/qa/EV-GATEC-OP-ACL-001-handoff.md`) against the recorded Block 1
+controls. Read-only; no AWS mutation, no credential handling, no raw/data
+operation.
+
+## Verdict
+
+**PASS — the previously failing Block 1 controls are remediated and evidenced.
+Block 1 implementation evidence is accepted for the recorded nonproduction
+scope.** This does not authorize production/shared deployment, writer-profile
+enablement, Block 2, or release; those remain gated.
+
+## Checks executed
+
+| Check | Result |
+| --- | --- |
+| `validate_policies.py` (offline policy validator) | **PASS** — offline policy validation passed |
+| `pytest infra/aws/gate-c-operational/acl/test_validate_policies.py` | **PASS** — 22 passed |
+| `verify_operator_reads.py --execute` (operator, 9 read checks) | **PASS** — 9/9 exit 0 (caller identity, bucket location, versioning, object-lock, BPA, ownership, encryption, CMK describe, trust anchor) |
+| Bucket Block Public Access (`get-public-access-block`) | **PASS** — all four controls `true` (previous FAIL remediated) |
+| Bucket Versioning | **PASS** — `Enabled` |
+| Object Lock | **PASS** — capability `Enabled` |
+| Object Ownership | **PASS** — `BucketOwnerEnforced` |
+| Default SSE-KMS encryption | **PASS** — CMK `3ea2b50b...`, Bucket Key enabled, SSE-C blocked |
+| CMK metadata (`describe-key`) | **PASS** — `KeyManager=CUSTOMER`, `SYMMETRIC_DEFAULT`, `ENCRYPT_DECRYPT`, `Enabled`, single-Region |
+| Roles Anywhere trust anchor | **PASS** — `ap-south-1`, enabled, `CERTIFICATE_BUNDLE`, name `zhufengxiangmu` |
+| Caller identity | **PASS** — account `982408502231`, IAM user `everest-gatec-operator` |
+| Git exclusion + secret scan (GATEC-CLOSE-003) | **PASS** — authoritative remote `Yizebaba/everest`; raw artifacts excluded; gitleaks 0 new leaks vs baseline |
+
+## Superseded findings
+
+The historical Block 1 QA FAIL was driven by (1) bucket Block Public Access
+all-false, (2) KMS bootstrap-only policy, (3) absent roles/profiles/CRL/
+analyzer, and (4) operator `AdministratorAccess`. The current AWS reads confirm
+items 1 is fixed; items 2-4 are recorded as remediated in the handoff (final KMS
+policy applied via no-lockout MFA-admin procedure, `/everest/` roles and four
+disabled profiles created, CRL enabled, analyzer `EverestGateC` created with
+empty findings, `AdministratorAccess` removed). This re-evaluation reproduces the
+relevant read evidence with the least-privilege operator identity.
+
+## Residual / open (not Block 1 failures)
+
+- **CRL renewal** due 2026-10-31; reissue before expiry.
+- **Writer certificate rotation** (30-day validity to 2026-09-23).
+- **CreateSession pacing** — transient `AccessDenied` under rapid bursts is a
+  documented AWS behavior, not a config defect.
+- **Block 2 retention** remains closed; no Object Lock default/legal hold/
+  disposition is in effect (correct for Block 1).
+- Independent Governance QA verdict for the irreversible production Compliance
+  canary remains a later gate.
+
+## Boundary
+
+This PASS is limited to Block 1 nonproduction evidence acceptance. It does not
+enable writer profiles, does not open Block 2, does not authorize shared/
+production deployment, and does not close Gate C-Operational. The board records
+`EV-GATEC-OP-ACL-001` as QA-passed-for-recorded-scope with the residual register
+carried forward.
