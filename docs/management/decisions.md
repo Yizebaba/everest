@@ -2735,3 +2735,32 @@ separately gated.
 
 These records close the Gate C-Operational definition work. Any actual release
 requires the Manager release decision and the RELEASE-010 checkpoint evidence.
+
+## EV-GATEC-OP-RELEASE-010-DECISION: Manager release decision
+
+**Decision date:** 2026-08-25  
+**Decision authority:** Everest Manager  
+**Target scope:** **WSL/Docker local runtime; NOT exposed to the public
+internet.**  
+**Status:** Release gate inputs satisfied for the recorded local runtime;
+CloudTrail delivery checkpoint confirmed (log file delivered 2026-08-25T06:20Z
+with management events; object data events follow with normal CloudTrail
+latency). No shared/production deployment is authorized.
+
+### Decision record
+
+- Target scope: local WSL/Docker runtime (ADR-018), API on `127.0.0.1:50149`,
+  PostgreSQL on `127.0.0.1:56021`; not exposed to the public internet.
+- Approved environment: current WSL/Docker host, no public entry point.
+- Evidence referenced: QA-009 PASS, board, decisions, live runtime probes.
+- Waivers: none for the local runtime; the production Compliance canary,
+  writer-profile enablement, and legal-hold/disposition remain unassigned and
+  unexecuted.
+- Effective date: 2026-08-25. Approver: Everest Manager.
+- Rollback/stop conditions: any new exposure, account/region change, or
+  dependency upgrade re-enters review under RELEASE-010.
+
+This records the release decision for the local runtime only. It does not
+authorize a shared/production deployment, a public endpoint, or any
+irreversible production operation. Frontend integration (existing `apps/web`)
+is the next step and remains a separately authorized scope.
