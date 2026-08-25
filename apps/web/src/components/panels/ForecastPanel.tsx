@@ -140,6 +140,12 @@ export function ForecastPanel({
                       {record.wind_speed !== null &&
                         record.wind_speed !== undefined &&
                         ` · ${record.wind_speed.toFixed(1)} m/s`}
+                      {record.precipitation !== null &&
+                        record.precipitation !== undefined &&
+                        ` · ${record.precipitation.toFixed(1)} mm`}
+                      {record.visibility !== null &&
+                        record.visibility !== undefined &&
+                        ` · ${Math.round(record.visibility)} m vis`}
                     </span>
                   ))}
               </li>

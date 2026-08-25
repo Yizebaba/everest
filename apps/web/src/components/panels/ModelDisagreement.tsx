@@ -4,9 +4,14 @@ import { useMemo, useState } from "react";
 
 import type { CanonicalWeatherRecord } from "@/api/types";
 
-type Variable = "temperature" | "wind_speed" | "visibility";
+type Variable = "temperature" | "wind_speed" | "precipitation" | "visibility";
 
-const VARIABLES: Variable[] = ["temperature", "wind_speed", "visibility"];
+const VARIABLES: Variable[] = [
+  "temperature",
+  "wind_speed",
+  "precipitation",
+  "visibility",
+];
 
 function valueOf(
   record: CanonicalWeatherRecord,
@@ -17,6 +22,8 @@ function valueOf(
       return record.temperature ?? null;
     case "wind_speed":
       return record.wind_speed ?? null;
+    case "precipitation":
+      return record.precipitation ?? null;
     case "visibility":
       return record.visibility ?? null;
   }

@@ -58,6 +58,48 @@ export function CurrentWeatherPanel({
               {record.record_type === "forecast" && (
                 <small> · forecast, not an observation</small>
               )}
+              <dl className="current-weather__values">
+                {record.temperature !== null &&
+                  record.temperature !== undefined && (
+                    <div>
+                      <dt>Temp</dt>
+                      <dd>{record.temperature.toFixed(1)}°C</dd>
+                    </div>
+                  )}
+                {record.wind_speed !== null &&
+                  record.wind_speed !== undefined && (
+                    <div>
+                      <dt>Wind</dt>
+                      <dd>
+                        {record.wind_speed.toFixed(1)} m/s
+                        {record.wind_direction !== null &&
+                          record.wind_direction !== undefined &&
+                          ` · ${Math.round(record.wind_direction)}°`}
+                      </dd>
+                    </div>
+                  )}
+                {record.precipitation !== null &&
+                  record.precipitation !== undefined && (
+                    <div>
+                      <dt>Precip</dt>
+                      <dd>{record.precipitation.toFixed(1)} mm</dd>
+                    </div>
+                  )}
+                {record.visibility !== null &&
+                  record.visibility !== undefined && (
+                    <div>
+                      <dt>Vis</dt>
+                      <dd>{Math.round(record.visibility)} m</dd>
+                    </div>
+                  )}
+                {record.altitude !== null &&
+                  record.altitude !== undefined && (
+                    <div>
+                      <dt>Alt</dt>
+                      <dd>{Math.round(record.altitude)} m</dd>
+                    </div>
+                  )}
+              </dl>
             </li>
           ))}
         </ul>
@@ -76,6 +118,24 @@ export function CurrentWeatherPanel({
         li {
           margin-top: 8px;
           font-size: 12px;
+        }
+        .current-weather__values {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 4px 12px;
+          margin: 6px 0 0;
+        }
+        .current-weather__values div {
+          display: flex;
+          gap: 6px;
+        }
+        .current-weather__values dt {
+          color: #9aa5b8;
+          min-width: 42px;
+        }
+        .current-weather__values dd {
+          margin: 0;
+          color: #e6eaf2;
         }
         small {
           color: #d8b36a;
