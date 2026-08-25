@@ -4,10 +4,10 @@ import { useEffect, useRef, useState } from "react";
 import {
   Cartesian2,
   Cartesian3,
+  Cesium3DTileset,
   Color,
   defined,
   Entity,
-  Rectangle,
   ScreenSpaceEventHandler,
   ScreenSpaceEventType,
   Viewer,
@@ -40,7 +40,6 @@ const SOURCE_COLORS: Record<string, string> = {
 
 export function EverestScene({
   records,
-  terrainTile,
   satelliteSegments,
   onSelectRecord,
 }: EverestSceneProps): React.JSX.Element {
@@ -179,21 +178,24 @@ export function EverestScene({
       String(entity.id).startsWith("terrain-"),
     );
     terrainEntities.forEach((entity) => viewer.entities.remove(entity));
-    if (showTerrain && terrainTile?.tile) {
-      const [west, south, east, north] = terrainTile.tile.bounds;
-      viewer.entities.add(
-        new Entity({
-          id: "terrain-overlay",
-          rectangle: {
-            coordinates: Rectangle.fromDegrees(west, south, east, north),
-            material: Color.fromCssColorString("#94A3B8").withAlpha(0.15),
-            outline: true,
-            outlineColor: Color.fromCssColorString("#94A3B8"),
-          },
-        }),
-      );
+    const existing = viewer.scene.primitives._primitives.find(
+      (primitive: { id?: string }) => primitive?.id === "everest-terrain-tiles",
+    );
+    if (existing) {
+      viewer.scene.primitives.remove(existing);
     }
-  }, [showTerrain, terrainTile]);
+    if (showTerrain) {
+      const tileset = new Cesium3DTileset({
+        url: "/tiles/tileset.json",
+        maximumScreenSpaceError: 16,
+      });
+      (tileset as unknown as { id: string }).id = "everest-terrain-tiles";
+      viewer.scene.primitives.add(tileset);
+      void tileset.readyPromise.then(() => {
+        viewer.zoomTo(tileset, new Cesium3DTileset.HeadingPitchRange(0, -0.6, 300000));
+      });
+    }
+  }, [showTerrain]);
 
   useEffect(() => {
     const viewer = viewerRef.current;
