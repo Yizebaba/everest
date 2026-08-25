@@ -52,7 +52,7 @@ stages.
 | EV-GATEC-OP-TMP-004 | Legacy `tmp-*` inventory/disposition | blocked; no artifact operation authorized | ACL, retention, Git evidence, separate Manager authorization | `docs/management/decisions.md` |
 | EV-GATEC-OP-DB-005 | Persistent PostgreSQL and recovery | COMPLETE (2026-08-25): Docker compose persistent PostgreSQL (port 56021, healthy, persistent volume), backup/restore scripts with non-empty-db protection, migrations applied to head | none | `infra/docker/compose.yml`, `infra/docker/backup.sh`, `infra/docker/restore.sh` |
 | EV-GATEC-OP-RUNTIME-006 | Supervised service and current health | COMPLETE (2026-08-25): systemd-managed API on 50149 (active, restart on failure); 6-hourly scheduler timer ingests latest IFS 0-72h (25 leads) with cycle fallback; API verified returning persisted forecast | persistent PostgreSQL (DB-005) | `infra/docker/systemd/`, `apps/api/schedule_forecast.py` |
-| EV-GATEC-OP-SECRETS-007 | Secrets/configuration management | blocked | identity and runtime composition | `docs/architecture/architecture.md` |
+| EV-GATEC-OP-SECRETS-007 | Secrets/configuration management | COMPLETE (2026-08-25): runtime secrets via operator env file (chmod 600); non-secret config committed; registry stores reference names only; redaction + gitleaks verified | identity and runtime composition (DB-005/RUNTIME-006) | `docs/architecture/EV-GATEC-OP-SECRETS-007.md` |
 | EV-GATEC-OP-AUDIT-008 | Audit/observability/alerting | blocked | Blocks 1-7 | `docs/architecture/architecture.md` |
 | EV-GATEC-OP-QA-009 | Independent operational QA | blocked | Blocks 1-8 | `docs/qa/test-plan.md` |
 | EV-GATEC-OP-RELEASE-010 | Release gate definition | blocked; no release authorized | Gate C-Operational QA pass | `docs/management/board.md` |
