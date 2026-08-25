@@ -2866,3 +2866,35 @@ and this record.
 longer covers them or mirrored networking is replaced with NAT mode; the ports
 must first pass a bind probe in the WSL pid1 namespace. No raw-artifact or
 database operation is affected by this decision.
+
+## EV-GATEC-OP-GIT-003-QA: independent Git exclusion and secret-scan re-verification
+
+**Review date:** 2026-08-25  
+**Status:** ACCEPTED for the authoritative Git-bearing checkout on branch
+`main` (47 commits, 247 tracked files) after the EV-UI-001 and ADR-019
+commits.
+
+Independent verification performed (read-only, no raw-artifact operation):
+
+- `git ls-files` contains **no** `.grib`, `.grib2`, `.nc`, `.bz2`, `.tif`,
+  `.tiff` payload, and no `tmp-gfs*` / `tmp-icon*` path. All such artifacts are
+  excluded by the root `.gitignore` (`tmp-*/`, `*.grib`, `*.grib2`, `*.nc`,
+  `*.bz2`, `*.tif`, `*.tiff`, `data/raw/`).
+- A manual secret-pattern scan over all tracked files found matches only in
+  deliberate test fixtures: `apps/api/tests/test_redaction.py`,
+  `infra/aws/gate-c-operational/acl/fixtures/secret-patterns.json`, and
+  `infra/aws/gate-c-operational/acl/test_validate_policies.py`. These are
+  redaction/validation fixtures, consistent with the recorded
+  `.gitleaks-baseline.json` allowlist; no live credential is present.
+- The three commits added during this session
+  (`61d41c2`, `afde87a`, `25976ce`) were scanned individually and contain no
+  secret pattern.
+- The authoritative remote remains `https://github.com/Yizebaba/everest`
+  (private). Raw exclusion and secret-scan evidence for `GATEC-CLOSE-003` is
+  accepted; the prior gitleaks-baseline record remains valid.
+
+**Boundary:** this accepts the Git exclusion evidence only. Project-root
+`tmp-gfs*` / `tmp-icon*` disposition (Block 4 `EV-GATEC-OP-TMP-004`) remains
+separately blocked pending Everest Manager authorization and is not operated on
+here. Block 1 ACL/IAM and Block 2 legal/WORM controls remain open; no
+production deployment or release is authorized.
