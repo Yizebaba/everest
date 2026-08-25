@@ -31,10 +31,20 @@ their underlying tables). For a target camp/altitude (default Summit):
 All inputs are read-only; the engine never fabricates, interpolates, or
 substitutes a missing value.
 
+> **Altitude limitation (review note):** canonical records carry the provider
+> grid-point altitude (e.g. 6008 m / 5830 m), not the summit's 8848 m. The
+> engine evaluates the nearest grid-point weather as a documented approximation
+> of summit conditions; it does not claim an exact summit measurement. This
+> limitation is part of the output metadata, not hidden.
+
 ## Rule contract (configurable thresholds, default values)
 
 Thresholds are a reviewed configuration (extended from the frontend
-`SUMMIT_THRESHOLDS`: `goMaxWind=15`, `cautionMaxWind=25` m/s). Defaults:
+`SUMMIT_THRESHOLDS`: `goMaxWind=15`, `cautionMaxWind=25` m/s). Defaults below
+are **demonstration defaults pending meteorology calibration** — they are not
+claimed as validated summit-safety thresholds until the meteorology owner
+confirms them. Thresholds are the only place where calibration happens; the
+rule logic itself is fixed and transparent.
 
 | Factor | Condition (at target altitude) | Risk contribution |
 | --- | --- | --- |
@@ -49,13 +59,15 @@ Thresholds are a reviewed configuration (extended from the frontend
 Output `level` is the **most restrictive** factor: `block`, `caution`, `go`, or
 `unknown`. `factors` lists each applied factor and its value; `confidence` is
 the fraction of scored factors that are known (never overstates unknown data).
+If **all** factors are unknown, `level` is `unknown` and `confidence` is `0.0`.
 
 ## Output contract
 
 ```text
 {
   "valid_time": "…",            // matching the input record
-  "profile": "SUMMIT",           // target label only, no invented geometry
+  "profile": "SUMMIT",           // filter label only; never a coordinate/geometry
+  "altitude_metres": 6008.05,    // grid-point altitude used (approximation note)
   "level": "go" | "caution" | "block" | "unknown",
   "confidence": 0.0..1.0,       // fraction of scored factors with known values
   "factors": [
@@ -67,7 +79,9 @@ the fraction of scored factors that are known (never overstates unknown data).
 ```
 
 Rules are additive and non-destructive: a missing factor yields `unknown`, not
-`go`. No value is fabricated.
+`go`. No value is fabricated. `profile` is a route/camp **filter label** only
+and never implies or carries a camp coordinate or geometry (per AOI/PRD: no
+invented named-feature geometry).
 
 ## Module boundaries
 
@@ -84,11 +98,15 @@ Rules are additive and non-destructive: a missing factor yields `unknown`, not
 1. Deterministic unit tests cover threshold boundaries (15/25), missing data,
    blocking flags, and additive factor rules.
 2. Output level is always the most restrictive known factor; unknown data
-   never becomes `go`.
-3. No AI, no ML, no learned weights; thresholds are configuration.
-4. Weather semantics and API contracts unchanged; no frontend integration in
+   never becomes `go`; all-unknown yields `unknown` with confidence `0.0`.
+3. No AI, no ML, no learned weights; thresholds are configuration and marked
+   as pending meteorology calibration.
+4. `profile` is a filter label only and never emits a camp coordinate or
+   geometry; grid-point altitude is reported with an explicit approximation
+   note.
+5. Weather semantics and API contracts unchanged; no frontend integration in
    this module.
-5. `black`, `pylint`, `compileall` pass; tests green.
+6. `black`, `pylint`, `compileall` pass; tests green.
 
 ## Sequence
 
