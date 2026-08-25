@@ -2613,3 +2613,53 @@ ones) are absent from AWS.
 No legal hold, disposition, broker/admin creation, profile enablement, Block 3,
 or canary operation occurred. B2 remains at Stage-3-adjacent state; Governance
 QA and the activation transition are separate gated tasks.
+
+## EV-GATEC-OP-DB-005 + RUNTIME-006: persistent service implementation
+
+**Executed:** 2026-08-25 (Everest Manager)  
+**Status:** COMPLETE for the WSL/Docker deployment environment (ADR-018)  
+**Scope:** Persistent PostgreSQL, backup/recovery, supervised API, and a
+6-hourly forecast scheduler.
+
+### DB-005 — persistent PostgreSQL and recovery
+
+- `infra/docker/compose.yml`: `postgres:17-alpine` on documented non-standard
+  port `56021`, restart policy, health check, named persistent volume
+  `everest_postgres_data`. DB password is supplied via the operator environment
+  file `~/.everest/db.env` (chmod 600, never committed).
+- `infra/docker/backup.sh`: logical `pg_dump -Fc` to `EVEREST_BACKUP_DIR` with
+  timestamped archive and 14-file retention.
+- `infra/docker/restore.sh`: restores an archive and refuses to overwrite a
+  non-empty database unless `FORCE=1`.
+- Alembic migrations applied to head on the persistent database.
+
+### RUNTIME-006 — supervised service and current health
+
+- `infra/docker/systemd/everest-api.service`: systemd-managed uvicorn on port
+  `50149`, `Restart=on-failure`. Bound to `0.0.0.0` inside WSL.
+- `infra/docker/systemd/everest-scheduler.timer` + `.service`: 6-hourly
+  (00/06/12/18 UTC) run of `apps/api/schedule_forecast.py`.
+- `apps/api/schedule_forecast.py`: retrieves the latest IFS 00/06/12/18 cycle,
+  ingests leads 0-72h (3h steps, 25 records) through the checked-in connector/
+  parser/normalizer/service, and falls back to prior cycles when the provider
+  has not yet published the newest one.
+- Verified: API returns the persisted IFS 2026-08-24 18Z cycle (25 forecast
+  records) at `GET /api/weather/forecast`.
+
+### Deployment facts
+
+- The Windows-side residual `run_dev.py` process that occupied port `50149`
+  was terminated so the WSL systemd service could bind; the systemd-managed
+  service now owns the port.
+- `EVEREST_DB_PASSWORD` is held in the operator-only WSL env file; it is not in
+  the repository, the compose file, or any committed configuration.
+- Current health/API availability are now live for the persistent runtime; this
+  supersedes the prior `unknown` disposable-teardown state for this deployment.
+
+### Boundary
+
+This implements the deployment runtime only. It does not open SECRETS-007,
+AUDIT-008, QA-009, or RELEASE-010; does not enable writer profiles or production
+S3 canary; and does not change any source/API contract or weather semantics.
+The production raw-storage WORM boundary and legal-hold/disposition controls
+remain governed by the B2/B1 records.
