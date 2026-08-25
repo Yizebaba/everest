@@ -2629,11 +2629,10 @@ or current health. Do not authorize a database rerun solely for documentation.
 ## EV-GATEC-OP-RETENTION-002-OFFLINE — B2 QA skeleton
 
 **Prepared:** 2026-08-24  
-**Status:** Offline foundation complete; independent offline QA recorded
-2026-08-25 (24 tests PASS, Black/Pylint/compileall clean). This record is not
-AWS, PostgreSQL, runtime, WORM, legal-hold, disposition, or current-health
-evidence. Governance provisioning is the next separate task; the production
-canary remains disabled; B3 is closed.
+**Status:** Offline review remediation complete on 2026-08-25; independent
+review pending. Local author evidence is recorded below and is not AWS,
+PostgreSQL, runtime, WORM, legal-hold, disposition, provisioning, canary, or
+current-health evidence. The production canary remains disabled; B3 is closed.
 
 ### Offline foundation review
 
@@ -2665,6 +2664,21 @@ canary remains disabled; B3 is closed.
       authority, key destruction as disposition, and missing version IDs.
 - [x] Runbook identifies irreversible Compliance behavior, cost, roll-forward
       recovery, no raw/`tmp-*` use, stop conditions, and sanitized evidence.
+- [x] Invalid `s3:GetObjectAttributes` was removed. Audit metadata access is
+      exactly version listing, retention, legal hold, and approved bucket
+      configuration reads; no payload access.
+- [x] Legal/hold/disposition roles are absent. Broker/admin are uncreated until
+      the exact Governance QA activation transition; no fake `enabled=false` or
+      null IAM trust is treated as deployable inactivity.
+- [x] Validator checks exact schemas, four BPA keys, ownership, KMS ARN,
+      resources/principals/effects/actions, S3 allowlist, bucket-lock deny, and
+      rejects unknown/missing fields. Mutation tests exercise these boundaries.
+- [x] Governance QA rejects direct arbitrary dates and Compliance mode; broker
+      calculates the approved date and executor is Governance-only.
+- [x] Provisioning order requires Governance/180 readback before attaching the
+      lock-mutation deny; Lifecycle remains absent.
+- [x] Backend contract requires immutable `version_created_at` and
+      `s3_last_modified`, including timing mutation/reconciliation tests.
 
 ### Future Governance provisioning and runtime matrix
 
@@ -2678,12 +2692,15 @@ be checked from configuration presence alone:
       extension to at least the later-of calculated 730-day date.
 - [ ] Negative AWS authorization tests prove all writer, retention-admin, legal,
       hold, disposition, audit, no-version delete, bypass, and Lifecycle limits.
-- [ ] Additive PostgreSQL migration runs upgrade/downgrade on disposable
+- [x] Additive PostgreSQL migration runs upgrade/downgrade on disposable
       PostgreSQL; no S3 identity is invented for legacy/local rows; append-only
-      exact-version events and unique triple constraints pass.
+      exact-version events and unique triple constraints pass. **DB-04
+      implemented 2026-08-25** (migration `20260825_0008`, models
+      `WeatherStorageVersionModel`/`WeatherStorageEventModel`, 6 PostgreSQL tests
+      PASS, Pylint 10.00/10).
 - [ ] State-machine tests prove exact-version identity, readback-before-success,
       compare-and-set concurrency, idempotency, drift/KMS blocking, and disabled
-      hold/disposition commands.
+      hold/disposition commands. (SVC-05 not yet implemented)
 - [ ] Public API regression proves no bucket/key/version/KMS/retention leakage
       and no weather semantic change.
 - [ ] Teardown preserves retained synthetic versions and their CMK dependency;
@@ -2758,3 +2775,93 @@ enable writer profiles, does not open Block 2, does not authorize shared/
 production deployment, and does not close Gate C-Operational. The board records
 `EV-GATEC-OP-ACL-001` as QA-passed-for-recorded-scope with the residual register
 carried forward.
+
+---
+
+# EV-UI-001-INTEGRATION-AUDIT-QA
+
+**Review date:** 2026-08-25  
+**Scope:** Read-only independent frontend/backend integration audit using
+already collected runtime evidence, automated results, contracts, and source
+inspection. No business code, tests, other documents, external sources,
+database, raw/`tmp-*` artifacts, or processes were changed or operated.
+
+## Verdict
+
+**FAIL / NO-GO.** The current browser-to-API integration and frontend display
+are not acceptance-ready.
+
+## Current direct evidence
+
+- A CORS preflight from origin `http://localhost:42420`, carrying
+  `X-Correlation-ID`, received `OPTIONS` HTTP 405 with no CORS allowance.
+- Weather API timestamps and forecast cycles were serialized with `+08:00`,
+  while the frontend contract requires UTC `Z`.
+- `/api/weather/current` and `/api/weather/forecast` each returned the same
+  single old DWD ICON forecast record.
+- `/api/weather/profile?profile=SUMMIT` returned HTTP 200 with no records.
+- `/api/weather/sources` and `/api/data-health` returned a persisted DWD ICON
+  `verified`/`healthy` fact. This is only the database/API value observed; it is
+  not evidence of real current source health, freshness, or live ingestion.
+- The frontend on port `42420` returned HTTP 500. A separate instance did not
+  form valid evidence because shared `.next` state conflicted with concurrent
+  dev/build activity; it also returned 500 and made no API request.
+
+## Automated results
+
+- Web tests: **21 passed**; ESLint: **passed**.
+- With `NEXT_PUBLIC_EVEREST_API_BASE_URL` configured, web build and typecheck:
+  **passed**. The build failed when that required environment value was absent.
+- Focused backend weather API tests: **8 passed**.
+- Full `apps/api` result: **50 passed, 22 skipped**.
+- `services/weather/tests`: **111 passed**.
+
+## Core findings
+
+### Critical
+
+1. **Browser API access is blocked by missing CORS support.** The custom
+   correlation header triggers a preflight, and the observed HTTP 405 prevents
+   the permitted frontend-to-Everest-API path.
+
+### High
+
+1. **No usable frontend runtime was evidenced.** Port `42420` returned HTTP
+   500, and the attempted independent instance was invalidated by shared
+   `.next` contention.
+2. **The API wire format conflicts with frontend validation.** `+08:00`
+   timestamps are not the required UTC `Z` values and will be rejected by the
+   frontend record validator.
+3. **Timeline-to-map data flow is inconsistent.** Forecast time selection is
+   applied to records loaded from the current endpoint rather than to the
+   forecast records that produced the timeline.
+4. **Current data cannot support a four-forecast-source integration claim.**
+   Only one old ICON weather record was observed; an empty Summit profile and
+   persisted registry/health values do not establish current four-source data,
+   freshness, or correct frontend rendering.
+5. **Runtime validation remains too weak for the documented contract.** It does
+   not fully enforce required provenance, ranges, nullable numeric types,
+   forecast identity, or source/health response fields.
+
+## Claim boundary
+
+The accepted historical disposable A-F source/core evidence is unchanged by
+this UI integration failure. It must remain classified as historical evidence.
+The current environment does **not** support claims that all four forecast
+sources are currently integrated, that persisted `healthy` is real current
+source health, that frontend/backend behavior is consistent, or that the
+frontend correctly displays API data.
+
+## Minimum repair order
+
+1. Start one isolated frontend runtime with an explicit API base URL and no
+   shared `.next` contention; require an HTTP 200 page before integration QA.
+2. Add least-privilege backend CORS for the approved frontend origin, `GET` /
+   `OPTIONS`, and `X-Correlation-ID`, including response-header exposure and
+   positive/negative tests.
+3. Convert all public API datetimes to UTC before serializing them with `Z` and
+   add wire-contract regressions.
+4. Drive the map and timeline from one validated forecast data set; keep
+   current data semantically separate.
+5. Provide a controlled, non-fabricated four-source canonical/API fixture and
+   truthful freshness states, then strengthen validators and rerun browser E2E.
