@@ -832,3 +832,55 @@ temporary listener, and port `47189` resources were cleaned up. Therefore
 Current ICON runtime health and API availability are `unknown`. Gate C-Core/DBRE
 evidence is complete, but Gate C-Operational remains incomplete; no live,
 continuous, or production ICON service is claimed. AIFS was not started.
+
+## EV-PYRAMID-001: Pyramid Meteorological Network registration
+
+**Date:** 2026-08-25  
+**Status:** `planned` (registration only; no connector/ingestion yet). This
+record registers the approved source facts verified against official
+documentation. Connector and ingestion work requires a separate Everest
+Manager authorization per ADR-017.
+
+Official documentation consulted:
+
+- Data description paper: Salerno et al., "What is climate change doing in the
+  Himalaya? Thirty years of the Pyramid Meteorological Network (Nepal)",
+  Earth Syst. Sci. Data, 17, 4293-4304,
+  <https://doi.org/10.5194/essd-17-4293-2025>
+- Zenodo dataset (latest version v6): <https://doi.org/10.5281/zenodo.15211352>
+- Official geoportal: <https://geoportal.mountaingenius.org/portal/>
+
+| Field | Pyramid Meteorological Network |
+| --- | --- |
+| `source_id` | `pyramid-meteo` |
+| `name` | Pyramid Meteorological Network (EvK2CNR) |
+| `provider` | Ev-K2-CNR / National Research Council of Italy (CNR) with Nepal Academy of Science and Technology (NAST) |
+| `category` | Observation |
+| `status` | `planned` (registered; connector not authorized yet) |
+| `access_method` | Zenodo archive download; geoportal registered-user CSV query |
+| `endpoint` | Zenodo: <https://doi.org/10.5281/zenodo.15211352>; geoportal: <https://geoportal.mountaingenius.org/portal/> |
+| `format` | CSV / ZIP archive (`PYRAMID_NETWORK_DATA_v3.zip`, 10,024,175 bytes, md5 `215b38f357b69e82744d99931cb1c456`) |
+| `update_frequency` | Hourly observations; 30-year series 1994-2023 |
+| `spatial_resolution` | 7 station point locations, 2660-7986 m a.s.l., Khumbu Valley (south slope of Everest, Sagarmatha National Park, Nepal) |
+| `temporal_resolution` | Hourly |
+| `coverage` | Khumbu Valley; stations Z2660, Z4260, Z5035, Z5370, Z5600, Z7986 (South Col), and related sites; within the approved Everest AOI |
+| `license` | CC BY 4.0 |
+| `commercial_allowed` | Yes under CC BY 4.0 subject to attribution (deployment-specific legal approval not asserted) |
+| `credentials_required` | None for Zenodo archive; registered-user login for the geoportal query interface |
+| `variables` | AT (2 m air temperature, °C), RR (rainfall rate, mm), RH (relative humidity, %), AP (atmospheric pressure, hPa), WS (wind speed, m s^-1), WD (wind direction, degrees); local times in Nepal Standard Time (UTC+5:45) |
+| `last_success_at` | `null` (no connector run) |
+| `last_failure_at` | `null` |
+| `health_status` | `unknown` (no service) |
+
+Notes:
+
+- The network is composed of 7 automatic weather stations, including the
+  Pyramid station at 5035 m a.s.l. (close to the Khumbu Glacier) and the South
+  Col station at 7986 m a.s.l. (Z7986).
+- Hourly data are published without gap-filling; missing values are empty
+  fields. A separate gap-filled monthly series (Tmin/Tmax/Tmean/Prec) is also
+  published.
+- The dataset is freely accessible under CC BY 4.0. No connector, parser,
+  normalizer, ingestion, persistence, API, or QA work has been started; the
+  source is registered for planning purposes only.
+

@@ -1276,3 +1276,25 @@ oaa-himawari9 (anonymous); Himawari Standard Data
 
 Remaining for all: full per-record data-quality acceptance and independent
 `verified` lifecycle; Everest AWS provider-backed endpoint confirmation.
+
+## EV-PYRAMID-001: Pyramid Meteorological Network (registration)
+
+**Date:** 2026-08-25  
+**Status:** \planned\ (registration only; no connector/ingestion yet per
+ADR-017 separate authorization). Registered source facts are verified against
+official documentation:
+
+- Provider: Ev-K2-CNR / CNR Italy with NAST Nepal. 7 automatic weather stations
+  at 2660-7986 m a.s.l. in the Khumbu Valley (south slope of Everest,
+  Sagarmatha National Park), 30-year hourly series 1994-2023.
+- Access: Zenodo archive https://doi.org/10.5281/zenodo.15211352 and the
+  Mountain Genius geoportal https://geoportal.mountaingenius.org/portal/
+  (registered-user CSV query). Format CSV/ZIP; license CC BY 4.0.
+- Variables: AT (°C), RR (mm), RH (%), AP (hPa), WS (m/s), WD (°); local time
+  Nepal Standard Time (UTC+5:45); hourly, no gap-filling.
+- Full registry entry: \docs/data-sources.md\ (EV-PYRAMID-001).
+- Official data paper: https://doi.org/10.5194/essd-17-4293-2025
+
+Connector, parser, normalizer, ingestion, persistence, API, tests, docs, and
+QA for this source remain unstarted and require a separate Everest Manager
+authorization.
