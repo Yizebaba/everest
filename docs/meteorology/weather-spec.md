@@ -1225,9 +1225,12 @@ system reference was consulted:
 ## EV-AWS-STATION-001 / EV-SAT-001: New-source connector evidence (ADR-019)
 
 **Date:** 2026-08-24  
-**Status:** connected (real-data retrieval/parse/QC passed); NOT verified
-(no DB/API/review yet). Facts verified against official docs; PENDING items not
-claimed.
+**Status (2026-08-25):** connected; real-data retrieval/parse/QC/canonical/
+PostgreSQL persistence/service API/integration tests PASS; independent QA
+records `EV-SOURCES-ADR019` PASS for the `connected` scope. NOT `verified`
+(no full per-record data-quality acceptance; Everest AWS provider-backed
+endpoint remains pending; Himawari field-level decode pending JMA guide).
+Facts verified against official docs; PENDING items not claimed.
 
 ### Everest AWS observations (services/weather/everest_aws/)
 
@@ -1242,7 +1245,12 @@ claimed.
   PASS). Raw files: D:\Everest-data\raw\everest-aws\.
 - Parser normalizes NPT (UTC+5:45) to UTC; columns located by header name;
   unnamed provider columns never assigned semantics.
-- 5 unit tests pass.
+- **Persistence + API (2026-08-25):** Base Camp / Camp 2 / South Col rows are
+  persisted in the running PostgreSQL (`aws_observation`) and served by
+  `GET /api/observations/current` with UTC `Z` timestamps and QC flags. The
+  source is registered in `data_source_registry` as `everest-aws`
+  (`connected`, `unknown` health). Commercial use remains NOT authorized.
+- 5 unit tests pass; integration test PASS on disposable PostgreSQL.
 
 ### Himawari-8/9 (services/satellite/himawari/)
 
@@ -1256,10 +1264,15 @@ oaa-himawari9 (anonymous); Himawari Standard Data
   verified in header; QC PASS. Raw: D:\Everest-data\raw\himawari\.
 - Connector discovers the band-dependent R code via S3 ListObjectsV2 (not
   guessed).
+- **Persistence + API (2026-08-25):** the band-3 segment record is persisted
+  in the running PostgreSQL (`satellite_segment`) and served by
+  `GET /api/satellite/segments` (band filter 1..16, no raw reference/hash
+  leak). The source is registered in `data_source_registry` as `himawari-9`
+  (`connected`, `unknown` health).
 - **Pending:** full field-level band/geometry decode and calibration requires
   the official JMA Himawari Standard Data format guide (PDF not machine-readable
   this session); documented as the next step.
 - 5 unit tests pass.
 
-Remaining for all: normalizer -> canonical model -> PostgreSQL/object storage ->
-service API -> integration tests -> review -> QA.
+Remaining for all: full per-record data-quality acceptance and independent
+`verified` lifecycle; Everest AWS provider-backed endpoint confirmation.

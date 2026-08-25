@@ -1,8 +1,11 @@
 # Everest Terrain Specification (EV-TERRAIN-001)
 
-**Status:** GLO-30 connector `connected` (real-data retrieval, parsing, and QC
-passed); NOT `verified` — persistence (PostGIS/object storage), API, tests
-beyond unit, docs, and review remain.
+**Status (2026-08-25):** GLO-30 connector `connected` (real-data retrieval,
+parsing, QC, canonical, PostgreSQL persistence, service API, integration
+tests all PASS; independent QA `EV-SOURCES-ADR019` records PASS for the
+`connected` scope). NOT `verified` — full per-record data-quality acceptance,
+PostGIS raster point-sampling, and independent review of every retained
+record remain.
 
 ## Scope
 
@@ -77,4 +80,13 @@ Ran in WSL (PostgreSQL 15.19) against `everest_test`:
   `/api/satellite/segments?band=3` → FLDK segment present. **3/3 PASS**.
 - Test: `apps/api/tests/test_sources_integration.py` (requires
   `EVEREST_TEST_DATABASE_URL`; skips otherwise).
+
+## Persistent runtime evidence (2026-08-25)
+
+- The GLO-30 Everest tile record is persisted in the running PostgreSQL
+  (`terrain_tile`) and served by `GET /api/terrain/tile?lat&lon` (bounds,
+  CRS, resolution, min/max elevation; no object reference or hash leak).
+- `copernicus-dem` is registered in `data_source_registry` (`connected`,
+  `unknown` health).
+
 
