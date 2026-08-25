@@ -3016,3 +3016,48 @@ frontend `127.0.0.1:52148`, PostgreSQL `127.0.0.1:56021`) is unchanged and is
 the only approved runtime. Shared or production deployment, writer-profile
 enablement, the production canary, and legal hold / disposition all remain
 unauthorized pending the respective separate gates.
+
+## EV-GATEC-OP-ACL-001-CORRECTION: B1 status clarification
+
+**Date:** 2026-08-25  
+**Status:** B1 (`EV-GATEC-OP-ACL-001`) is **QA PASS for the recorded
+nonproduction scope** per `EV-GATEC-OP-ACL-001` independent QA re-evaluation
+(`docs/qa/test-plan.md`, 2026-08-25) and `EV-GATEC-OP-QA-009`.
+
+This record corrects the earlier `EV-GATEC-OP-ACL-001-REVERIFY` entry. That
+entry's live read-only probes (bucket BPA, versioning, object lock, ownership,
+SSE-KMS, Bucket Key, CMK, operator least privilege) are all accurate PASS
+facts. Its "Remaining admin-required items" section, however, listed items that
+are **already implemented and QA-accepted** by the MFA admin session on
+2026-08-24/25:
+
+- Trust anchor `zhufengxiangmu` (`CERTIFICATE_BUNDLE`, `ap-south-1`) — created,
+  enabled, readback PASS (`verify_operator_reads.py` 9/9 includes
+  `get-trust-anchor`).
+- `/everest/` roles: 3 human MFA roles (`everest-gatec-administrator`,
+  `everest-raw-verifier`, `everest-audit-read-only`) and 4 writer Roles
+  Anywhere roles (`everest-writer-ecmwf-ifs`, `-noaa-gfs`, `-dwd-icon`,
+  `-ecmwf-aifs`) — created, trust configured, 3/3 MFA login test PASS,
+  positive/negative S3 authorization matrix PASS.
+- Four disabled 900-second Roles Anywhere profiles (`acceptRoleSessionName=true`)
+  — created.
+- CRL `everest-root-ca` enabled with revocation test PASS.
+- Access Analyzer `EverestGateC` created, zero findings after the
+  `AllowAccessAnalyzerReadOnly` KMS key-policy fix.
+- KMS final policy (named statements only, no account-principal bootstrap)
+  applied; `AdministratorAccess` removed from the operator.
+
+The REVERIFY entry's operator-identity observation that these reads are denied
+to the operator is correct and expected: the operator is intentionally
+least-privilege, so role/analyzer/policy state is verified via the recorded
+MFA-admin evidence and the independent QA reads, not via the operator
+identity.
+
+**B1 open residuals (non-blocking, from the QA record):** CRL renewal due
+2026-10-31; writer certificate rotation due 2026-09-23; CreateSession pacing is
+a documented AWS behavior. These are operational maintenance items, not
+Block-1 acceptance blockers.
+
+**Remaining Gate C-Operational gating:** B2 production Compliance canary
+(Stage 4, requires Manager gate + cost approval), writer-profile enablement,
+and shared/production deployment remain separate and unauthorized.
