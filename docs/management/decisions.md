@@ -2479,3 +2479,50 @@ certificates (distinct from `Certificate revoked`). Retrying with short pacing
 for the writer connectors: obtain sessions at a controlled rate and retry with
 backoff. It does not indicate a configuration defect; the same certificate
 consistently authenticates when paced.
+
+## EV-GATEC-OP-RETENTION-002-PROVISIONING: B2 Stage-2 Governance provisioning
+
+**Executed:** 2026-08-25 (Everest Manager + admin session)  
+**Status:** Stage-2 Governance provisioning COMPLETE; Stage-3 Governance QA
+pending  
+**Scope:** Dedicated nonproduction Governance QA bucket + five disabled retention
+roles + bucket policy + writer boundary denies. No legal-hold, disposition,
+canary, Block 3, or raw/`tmp-*` operation occurred.
+
+### Resources created (sanitized)
+
+- **Governance QA bucket** `zhufengxiangmu-b2-qa-982408502231` (ap-south-1):
+  Object Lock enabled at creation, Versioning `Enabled`, Object Ownership
+  `BucketOwnerEnforced`, Block Public Access all four `true`, SSE-KMS with
+  customer-managed key `arn:aws:kms:ap-south-1:982408502231:key/3ea2b50b-...`
+  plus Bucket Key and SSE-C blocked, default Object Lock retention
+  `GOVERNANCE` 180 days. Lifecycle configuration absent; bucket empty.
+- **Bucket policy** (5 explicit deny statements): `DenyGovernanceBypass`,
+  `DenyUnversionedDelete`, `DenyLifecycleMutation`,
+  `DenyBucketLockMutationOutsideInfrastructureBoundary`,
+  `DenyLegalHoldUntilAuthorityAssignment`.
+- **Roles** under `/everest/` (all disabled):
+  - `retention-admin` — MFA-protected operator trust; read/extend exact-version
+    retention policy only (no bypass/delete/hold/lifecycle).
+  - `legal-authority-placeholder` — deny-all, no trust principal.
+  - `hold-executor` — deny-all, no trust principal.
+  - `disposition-executor` — deny-all, no trust principal.
+  - `retention-audit-read-only` — MFA-protected operator trust; reads retention
+    metadata only (never payload).
+- **Writer boundary denies** attached to all four B1 writer roles:
+  `everest-writer-ecmwf-ifs`, `-noaa-gfs`, `-dwd-icon`, `-ecmwf-aifs` — deny
+  retention/hold/delete/read/list/lifecycle/bucket-lock mutation without
+  broadening their put-only prefix policy.
+
+### Verified by readback
+
+Bucket versioning/object-lock/ownership/BPA/encryption all pass; object-lock
+default is `GOVERNANCE/180`; lifecycle absent; bucket empty; roles created with
+correct path/trust/policy; writer boundary policies attached.
+
+### Boundary
+
+This completes the provisioning step only. Governance QA (Stage 3) is a separate
+task requiring approved synthetic test objects and a reviewed QA matrix; the
+production Compliance canary remains disabled; legal hold, disposition, and any
+writer-profile enablement remain prohibited. Block 3 remains closed.
