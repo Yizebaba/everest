@@ -1,0 +1,10 @@
+{
+  "region": "ap-south-1",
+  "identities": [
+    {"source":"ECMWF IFS","prefix":"ecmwf-ifs","role":"everest-writer-ecmwf-ifs","profile":"everest-profile-ecmwf-ifs","certificate":"everest/ecmwf-ifs/${WORKLOAD_UUID}"},
+    {"source":"NOAA GFS","prefix":"noaa-gfs","role":"everest-writer-noaa-gfs","profile":"everest-profile-noaa-gfs","certificate":"everest/noaa-gfs/${WORKLOAD_UUID}"},
+    {"source":"DWD ICON","prefix":"dwd-icon","role":"everest-writer-dwd-icon","profile":"everest-profile-dwd-icon","certificate":"everest/dwd-icon/${WORKLOAD_UUID}"},
+    {"source":"ECMWF AIFS","prefix":"ecmwf-aifs","role":"everest-writer-ecmwf-aifs","profile":"everest-profile-ecmwf-aifs","certificate":"everest/ecmwf-aifs/${WORKLOAD_UUID}"}
+  ],
+  "prohibited": ["shared-principal", "iam-user-access-key", "implicit-windows-credential-inheritance"]
+}

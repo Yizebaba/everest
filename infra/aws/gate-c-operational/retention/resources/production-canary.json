@@ -1,0 +1,18 @@
+{
+  "resourceType": "Everest::S3::ComplianceCanaryContract",
+  "enabled": false,
+  "requiresGovernanceQaPass": true,
+  "accountId": "982408502231",
+  "region": "ap-south-1",
+  "bucketName": "zhufengxiangmu",
+  "syntheticOnly": true,
+  "exactObjectCount": 1,
+  "maxObjectSizeBytes": 1024,
+  "requiresNonNullVersionId": true,
+  "retention": {
+    "mode": "COMPLIANCE",
+    "days": 180
+  },
+  "legalHoldAllowed": false,
+  "deleteAllowed": false
+}

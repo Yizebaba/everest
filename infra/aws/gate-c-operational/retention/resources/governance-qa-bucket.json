@@ -1,0 +1,26 @@
+{
+  "resourceType": "AWS::S3::BucketContract",
+  "applyEnabled": false,
+  "accountId": "982408502231",
+  "region": "ap-south-1",
+  "bucketName": "zhufengxiangmu-b2-qa-982408502231",
+  "objectLockEnabledAtCreation": true,
+  "versioningStatus": "Enabled",
+  "objectOwnership": "BucketOwnerEnforced",
+  "blockPublicAccess": {
+    "blockPublicAcls": true,
+    "ignorePublicAcls": true,
+    "blockPublicPolicy": true,
+    "restrictPublicBuckets": true
+  },
+  "defaultRetention": {
+    "mode": "GOVERNANCE",
+    "days": 180
+  },
+  "defaultEncryption": {
+    "algorithm": "aws:kms",
+    "kmsKeyArn": "${B2_KMS_KEY_ARN}",
+    "bucketKeyEnabled": true
+  },
+  "lifecycleRules": []
+}

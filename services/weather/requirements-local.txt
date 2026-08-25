@@ -1,0 +1,4 @@
+# Provider adapters use the owner-neutral contract from this workspace.
+# This file intentionally does not package or install backend code.
+# Invoke pip from the repository root, as documented in QUALITY.md.
+-e packages/weather_ingestion_contract

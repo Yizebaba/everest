@@ -1,0 +1,4 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [{"Sid":"VerifyRawObjects","Effect":"Allow","Action":["s3:GetObject","s3:GetObjectVersion"],"Resource":"arn:aws:s3:::${RAW_BUCKET}/*"},{"Sid":"ListRawBucket","Effect":"Allow","Action":["s3:ListBucket"],"Resource":"arn:aws:s3:::${RAW_BUCKET}","Condition":{"StringLike":{"s3:prefix":["ecmwf-ifs/*","noaa-gfs/*","dwd-icon/*","ecmwf-aifs/*"]}}}]
+}

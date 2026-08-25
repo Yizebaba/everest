@@ -1,0 +1,40 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DenyGovernanceBypass",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "s3:BypassGovernanceRetention",
+      "Resource": "arn:aws:s3:::${RETENTION_BUCKET}/*"
+    },
+    {
+      "Sid": "DenyUnversionedDelete",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "s3:DeleteObject",
+      "Resource": "arn:aws:s3:::${RETENTION_BUCKET}/*"
+    },
+    {
+      "Sid": "DenyLifecycleMutation",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "s3:PutLifecycleConfiguration",
+      "Resource": "arn:aws:s3:::${RETENTION_BUCKET}"
+    },
+    {
+      "Sid": "DenyBucketLockMutationOutsideInfrastructureBoundary",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "s3:PutBucketObjectLockConfiguration",
+      "Resource": "arn:aws:s3:::${RETENTION_BUCKET}"
+    },
+    {
+      "Sid": "DenyLegalHoldUntilAuthorityAssignment",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "s3:PutObjectLegalHold",
+      "Resource": "arn:aws:s3:::${RETENTION_BUCKET}/*"
+    }
+  ]
+}

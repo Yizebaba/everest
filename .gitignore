@@ -1,0 +1,52 @@
+# ---- Raw data / large artifacts (AGENTS.md: never commit raw datasets) ----
+tmp-gfs-*/
+tmp-icon-*/
+tmp-*/
+*.grib
+*.grib2
+*.nc
+*.netcdf
+*.bz2
+*.tif
+*.tiff
+data/raw/
+*.geojson.bak
+
+# ---- External raw root (outside repo) ----
+# D:\Everest-data is intentionally outside the repository.
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+.coverage
+htmlcov/
+
+# ---- Node / Next.js ----
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+
+# ---- Secrets / credentials ----
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+*.p8
+credentials
+.aws/
+
+# ---- Local tooling / editor ----
+.idea/
+.vscode/
+*.swp
+.DS_Store

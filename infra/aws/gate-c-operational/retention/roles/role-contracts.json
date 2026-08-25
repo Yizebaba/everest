@@ -1,0 +1,40 @@
+{
+  "path": "/everest/",
+  "roles": [
+    {
+      "name": "retention-admin",
+      "enabled": false,
+      "trustPolicy": "${APPROVED_HUMAN_MFA_TRUST_POLICY}",
+      "humanMfaRequired": true,
+      "policy": "policies/retention-admin.json"
+    },
+    {
+      "name": "legal-authority-placeholder",
+      "enabled": false,
+      "trustPolicy": null,
+      "humanPrincipal": null,
+      "policy": "policies/legal-authority-deny-only.json"
+    },
+    {
+      "name": "hold-executor",
+      "enabled": false,
+      "trustPolicy": null,
+      "humanPrincipal": null,
+      "policy": "policies/hold-executor-disabled.json"
+    },
+    {
+      "name": "disposition-executor",
+      "enabled": false,
+      "trustPolicy": null,
+      "humanPrincipal": null,
+      "policy": "policies/disposition-executor-disabled.json"
+    },
+    {
+      "name": "retention-audit-read-only",
+      "enabled": false,
+      "trustPolicy": "${APPROVED_HUMAN_MFA_TRUST_POLICY}",
+      "humanMfaRequired": true,
+      "policy": "policies/audit-read-only.json"
+    }
+  ]
+}

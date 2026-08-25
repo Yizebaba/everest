@@ -1,0 +1,5 @@
+# Install the owner-neutral contract from this workspace before the API.
+# The relative editable requirement keeps local development off an
+# unpublished/public package index and does not alter runtime metadata.
+-e ../../packages/weather_ingestion_contract
+-e .

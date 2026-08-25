@@ -1,0 +1,4 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [{"Sid":"RolesAnywhereNamedWorkload","Effect":"Allow","Principal":{"Service":"rolesanywhere.amazonaws.com"},"Action":["sts:AssumeRole","sts:SetSourceIdentity","sts:TagSession"],"Condition":{"ArnEquals":{"aws:SourceArn":"${TRUST_ANCHOR_ARN}"},"StringEquals":{"aws:SourceAccount":"${AWS_ACCOUNT_ID}","aws:PrincipalTag/x509SAN/URI":"spiffe://everest/${WORKLOAD_PREFIX}/${WORKLOAD_UUID}","sts:SourceIdentity":"CN=everest/${WORKLOAD_PREFIX}/${WORKLOAD_UUID}"}}}]
+}

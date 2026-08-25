@@ -1,0 +1,15 @@
+{
+  "region": "ap-south-1",
+  "rawBucket": "${RAW_BUCKET}",
+  "kmsKeyArn": "${KMS_KEY_ARN}",
+  "accountId": "${AWS_ACCOUNT_ID}",
+  "trustAnchorArn": "${TRUST_ANCHOR_ARN}",
+  "maxObjectSizeBytes": 10485760,
+  "multipartUploads": false,
+  "workloads": [
+    {"source":"ECMWF IFS","prefix":"ecmwf-ifs","roleName":"everest-writer-ecmwf-ifs","profileName":"everest-profile-ecmwf-ifs","certificateSubject":"everest/ecmwf-ifs/${WORKLOAD_UUID}"},
+    {"source":"NOAA GFS","prefix":"noaa-gfs","roleName":"everest-writer-noaa-gfs","profileName":"everest-profile-noaa-gfs","certificateSubject":"everest/noaa-gfs/${WORKLOAD_UUID}"},
+    {"source":"DWD ICON","prefix":"dwd-icon","roleName":"everest-writer-dwd-icon","profileName":"everest-profile-dwd-icon","certificateSubject":"everest/dwd-icon/${WORKLOAD_UUID}"},
+    {"source":"ECMWF AIFS","prefix":"ecmwf-aifs","roleName":"everest-writer-ecmwf-aifs","profileName":"everest-profile-ecmwf-aifs","certificateSubject":"everest/ecmwf-aifs/${WORKLOAD_UUID}"}
+  ]
+}

@@ -1,0 +1,108 @@
+{
+  "assignmentId": "EV-GATEC-OP-ACL-001-RUNBOOK",
+  "latestEvidenceReviewAssignmentId": "EV-GATEC-OP-ACL-001-LIVE-EVIDENCE",
+  "deploymentClass": "nonproduction",
+  "selected": {
+    "accountId": "982408502231",
+    "region": "ap-south-1",
+    "bucketCandidate": "zhufengxiangmu",
+    "organizationCaPublicPemPath": "C:\\Users\\Hongke\\AppData\\Local\\Temp\\opencode\\everest-ca\\root-ca.crt",
+    "kmsAliasCandidate": "alias/everest-gatec-cmk",
+    "sessionDurationSeconds": 900,
+    "multipartUploads": false,
+    "maxObjectSizeBytes": 10485760
+  },
+  "pendingProductionInputs": {
+    "confirmedBucketName": "zhufengxiangmu",
+    "customerManagedKmsKeyArn": "arn:aws:kms:ap-south-1:982408502231:key/3ea2b50b-fab0-4b50-b1e0-7a0f464396b0",
+    "customerManagedKmsKeyManager": "CUSTOMER",
+    "apSouth1TrustAnchorArn": null,
+    "writerRoleArns": [],
+    "writerProfileArns": [],
+    "verifierRoleArn": null,
+    "verifierProfileArn": null,
+    "auditRoleArn": null,
+    "auditProfileArn": null,
+    "auditProfileRequired": false,
+    "verifierProfileRequired": false,
+    "rolePath": "/everest/",
+    "writerRoleNames": [
+      "everest-writer-ecmwf-ifs",
+      "everest-writer-noaa-gfs",
+      "everest-writer-dwd-icon",
+      "everest-writer-ecmwf-aifs"
+    ],
+    "writerProfileNames": [
+      "everest-profile-ecmwf-ifs",
+      "everest-profile-noaa-gfs",
+      "everest-profile-dwd-icon",
+      "everest-profile-ecmwf-aifs"
+    ],
+    "verifierRoleName": "everest-raw-verifier",
+    "auditRoleName": "everest-audit-read-only",
+    "accessAnalyzerName": "everest-gatec-external-access",
+    "accessAnalyzerArn": null,
+    "crlArn": null
+  },
+  "quarantine": {
+    "trustAnchor": {
+      "reportedRegion": "ap-east-1",
+      "arn": null,
+      "reason": "Wrong Region for the selected ap-south-1 single-Region identity design; never copy into renderer production input. Exact ARN was not supplied to this workspace."
+    },
+    "kmsKey": {
+      "reportedIdentifier": "supplied old key ending 72e66",
+      "keyManager": "AWS",
+      "reason": "AWS-managed key and not the actual key ARN returned by the bucket encryption read; customer-managed KeyManager=CUSTOMER evidence is mandatory."
+    }
+  },
+  "observedSanitizedReadEvidence": {
+    "reviewDate": "2026-08-24",
+    "callerAccountId": "982408502231",
+    "callerIamUser": "everest-gatec-operator",
+    "bucket": {
+      "name": "zhufengxiangmu",
+      "region": "ap-south-1",
+      "versioning": "Enabled",
+      "mfaDelete": "Disabled",
+      "objectLockCapability": "Enabled",
+      "objectLockDefaultRetentionRule": null,
+      "objectOwnership": "BucketOwnerEnforced",
+      "blockPublicAccess": {
+        "blockPublicAcls": false,
+        "ignorePublicAcls": false,
+        "blockPublicPolicy": false,
+        "restrictPublicBuckets": false
+      },
+      "defaultEncryptionAlgorithm": "aws:kms",
+      "actualKmsKeyArn": "arn:aws:kms:ap-south-1:982408502231:key/3ea2b50b-fab0-4b50-b1e0-7a0f464396b0",
+      "bucketKeyEnabled": true,
+      "sseCBlocked": true
+    },
+    "accountAdministratorAccessAttached": true,
+    "accountBlockPublicAccessAllTrue": true,
+    "actualBucketKmsKeyDescribeStatus": "passed-customer-symmetric-encrypt-decrypt-enabled-single-region",
+    "actualBucketKmsKeyAlias": "alias/everest-gatec-cmk",
+    "actualBucketKmsKeyPolicyStatus": "bootstrap-account-principal-iam-delegation-final-named-role-policy-pending",
+    "apSouth1TrustAnchorIdPrefix": "f66ffa5e",
+    "apSouth1TrustAnchorName": "zhufengxiangmu",
+    "apSouth1TrustAnchorEnabled": true,
+    "apSouth1TrustAnchorSourceType": "CERTIFICATE_BUNDLE",
+    "apSouth1TrustAnchorApprovedCaProvenance": "pending",
+    "apEast1TrustAnchorCount": 0,
+    "rolesUnderEverestPathCount": 0,
+    "rolesAnywhereProfileCount": 0,
+    "rolesAnywhereCrlCount": 0,
+    "accessAnalyzerCount": 0,
+    "cloudTrailStatus": "unknown-read-not-obtained-due-cli-option-error-deferred-block8",
+    "suppliedOldKmsKeyResult": "failed-quarantined-key-manager-aws",
+    "suppliedApEast1TrustAnchorResult": "failed-quarantined-resource-not-found",
+    "temporaryOperatorInlinePolicyRemovalProof": "pending"
+  },
+  "failureSignatures": {
+    "missingIdentityBasedConfigurationReadAllow": 1,
+    "suppliedTrustAnchorResourceNotFound": 1,
+    "threeFailureEscalationTriggered": false
+  },
+  "status": "block1-blocked-partial-pass-pending-admin-remediation-and-qa"
+}

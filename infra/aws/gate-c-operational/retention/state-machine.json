@@ -1,0 +1,52 @@
+{
+  "initialState": "uploaded",
+  "states": [
+    "uploaded",
+    "default_lock_pending",
+    "default_lock_verified_180d",
+    "failed_retained_180d",
+    "operational_extension_pending",
+    "operational_retained_730d",
+    "held",
+    "hold_release_pending",
+    "hold_released",
+    "retained_expired",
+    "disposition_pending_approval",
+    "disposition_approved",
+    "delete_requested",
+    "disposed_verified",
+    "lock_failed",
+    "drift_blocked",
+    "kms_access_blocked",
+    "storage_unclassified"
+  ],
+  "enabledTransitions": [
+    ["uploaded", "default_lock_pending"],
+    ["default_lock_pending", "default_lock_verified_180d"],
+    ["default_lock_verified_180d", "failed_retained_180d"],
+    ["default_lock_verified_180d", "operational_extension_pending"],
+    ["operational_extension_pending", "operational_retained_730d"]
+  ],
+  "disabledUntilAuthorityAssignment": [
+    "hold_placement",
+    "hold_release"
+  ],
+  "disabledThroughoutThisAuthorization": [
+    "disposition_approval",
+    "delete_version"
+  ],
+  "globalFailureStates": [
+    "drift_blocked",
+    "kms_access_blocked",
+    "lock_failed"
+  ],
+  "guards": {
+    "exactNonNullVersionId": true,
+    "s3ReadbackRequired": true,
+    "moreRestrictiveObservedStateWins": true,
+    "databaseOnlyStateNeverAuthorizesS3": true,
+    "holdOverridesExpiry": true,
+    "holdReleaseAndDispositionSeparate": true,
+    "deleteMarkerNeverCompletesDisposition": true
+  }
+}

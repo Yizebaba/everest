@@ -1,0 +1,26 @@
+{
+  "requiredIdentityFields": [
+    "artifactId",
+    "bucketName",
+    "objectKey",
+    "versionId"
+  ],
+  "versionId": {
+    "nullable": false,
+    "emptyAllowed": false,
+    "deleteMarkerAllowed": false
+  },
+  "operations": [
+    "get-retention",
+    "extend-retention",
+    "get-legal-hold",
+    "reconcile",
+    "request-disposition",
+    "delete-version",
+    "verify-version-absent"
+  ],
+  "unversionedDeleteAllowed": false,
+  "deleteMarkerCompletesDisposition": false,
+  "s3IsEnforcementAuthority": true,
+  "databaseIsProjection": true
+}

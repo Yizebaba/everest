@@ -1,0 +1,77 @@
+[build-system]
+requires = ['setuptools>=68']
+build-backend = 'setuptools.build_meta'
+
+[project]
+name = 'everest-api'
+version = '0.1.0'
+description = 'Everest backend data registry foundation'
+requires-python = '>=3.11'
+dependencies = [
+    'weather-ingestion-contract==0.1.0',
+    'SQLAlchemy>=2.0,<3.0',
+    'alembic>=1.13,<2.0',
+    'psycopg[binary]>=3.1,<4.0',
+    'fastapi>=0.115,<1.0',
+]
+
+[project.optional-dependencies]
+test = [
+    'pytest>=8.0,<9.0',
+]
+lint = [
+    'black>=24.0,<25.0',
+    'pylint>=3.0,<4.0',
+]
+
+[tool.black]
+line-length = 80
+target-version = ['py311']
+extend-exclude = '''
+(
+  /build/
+  | /dist/
+  | /[^/]+\.egg-info/
+  | /\.pytest_cache/
+  | /__pycache__/
+)
+'''
+
+[tool.pytest.ini_options]
+testpaths = ['tests']
+pythonpath = ['.']
+markers = [
+    'real_data: requires native parser support and connector-owned real payload',
+]
+
+[tool.setuptools.packages.find]
+include = ['everest_api*']
+
+[tool.pylint.main]
+ignore = ['CVS', 'build', 'dist', '.pytest_cache', '__pycache__']
+ignore-patterns = ['^\\.#', '^.*[.]egg-info$']
+ignore-paths = [
+    '.*[\\/](build|dist|[^\\/]+[.]egg-info|[.]pytest_cache|__pycache__)([\\/]|$)',
+]
+load-plugins = []
+recursive = true
+
+[tool.pylint.'MESSAGES CONTROL']
+disable = [
+    # Schema-shaped registry test fixtures intentionally repeat required fields.
+    'duplicate-code',
+]
+
+[tool.pylint.design]
+# SQLAlchemy models are declarative table schemas rather than behavior classes.
+# Limit R0903 exclusion to classes inheriting the backend metadata base.
+exclude-too-few-public-methods = [
+    '^everest_api[.]persistence[.]database[.]Base$',
+    '^Base$',
+]
+
+[tool.pylint.imports]
+# ``services`` is a sibling first-party package supplied through PYTHONPATH,
+# but it is not inside the API package's source root. Keep its import group
+# stable when Pylint is invoked from either the repository or API directory.
+known-third-party = ['services']

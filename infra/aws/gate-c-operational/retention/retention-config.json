@@ -1,0 +1,37 @@
+{
+  "accountId": "982408502231",
+  "region": "ap-south-1",
+  "policyVersion": "2026-08-24.b2.v1",
+  "kmsKeyArn": "${B2_KMS_KEY_ARN}",
+  "governanceQa": {
+    "bucketName": "zhufengxiangmu-b2-qa-982408502231",
+    "mode": "GOVERNANCE",
+    "days": 180,
+    "provisioningEnabled": false
+  },
+  "audit": {
+    "bucketName": "zhufengxiangmu-audit-982408502231",
+    "mode": "COMPLIANCE",
+    "days": 1095,
+    "provisioningEnabled": false
+  },
+  "productionCanary": {
+    "bucketName": "zhufengxiangmu",
+    "mode": "COMPLIANCE",
+    "days": 180,
+    "objectCount": 1,
+    "maxObjectSizeBytes": 1024,
+    "syntheticOnly": true,
+    "requiresGovernanceQaPass": true,
+    "enabled": false
+  },
+  "operationalExtensionDays": 730,
+  "lifecycleRules": [],
+  "roles": {
+    "retentionAdmin": "retention-admin",
+    "legalAuthorityPlaceholder": "legal-authority-placeholder",
+    "holdExecutor": "hold-executor",
+    "dispositionExecutor": "disposition-executor",
+    "auditRead": "retention-audit-read-only"
+  }
+}

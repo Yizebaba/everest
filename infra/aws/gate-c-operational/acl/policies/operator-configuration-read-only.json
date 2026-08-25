@@ -1,0 +1,30 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadExactRawBucketConfiguration",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetBucketLocation",
+        "s3:GetBucketVersioning",
+        "s3:GetBucketObjectLockConfiguration",
+        "s3:GetBucketPublicAccessBlock",
+        "s3:GetBucketOwnershipControls",
+        "s3:GetEncryptionConfiguration"
+      ],
+      "Resource": "arn:aws:s3:::zhufengxiangmu"
+    },
+    {
+      "Sid": "DescribeExactSuppliedKmsKey",
+      "Effect": "Allow",
+      "Action": "kms:DescribeKey",
+      "Resource": "${SUPPLIED_KMS_KEY_ARN}"
+    },
+    {
+      "Sid": "ReadExactSuppliedTrustAnchor",
+      "Effect": "Allow",
+      "Action": "rolesanywhere:GetTrustAnchor",
+      "Resource": "${SUPPLIED_TRUST_ANCHOR_ARN}"
+    }
+  ]
+}

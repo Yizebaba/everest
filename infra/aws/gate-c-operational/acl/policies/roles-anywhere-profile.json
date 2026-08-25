@@ -1,0 +1,10 @@
+{
+  "acceptRoleSessionName": true,
+  "durationSeconds": 900,
+  "enabled": false,
+  "managedPolicyArns": [],
+  "name": "${ROLES_ANYWHERE_PROFILE_NAME}",
+  "requireInstanceProperties": false,
+  "roleArns": ["${TARGET_ROLE_ARN}"],
+  "tags": [{"key":"everest-source","value":"${SOURCE_NAME}"}]
+}

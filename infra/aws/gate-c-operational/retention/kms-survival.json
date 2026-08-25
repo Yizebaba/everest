@@ -1,0 +1,29 @@
+{
+  "applyEnabled": false,
+  "kmsKeyArn": "${B2_KMS_KEY_ARN}",
+  "requiredKeyProperties": {
+    "accountId": "982408502231",
+    "region": "ap-south-1",
+    "keyManager": "CUSTOMER",
+    "keySpec": "SYMMETRIC_DEFAULT",
+    "keyUsage": "ENCRYPT_DECRYPT",
+    "multiRegion": false,
+    "enabled": true
+  },
+  "ordinaryRoleExplicitDenies": [
+    "kms:DisableKey",
+    "kms:ScheduleKeyDeletion"
+  ],
+  "deletionPreconditions": [
+    "version-aware-zero-dependency-inventory",
+    "no-active-retention",
+    "no-active-legal-hold",
+    "no-audit-obligation",
+    "no-recovery-copy-dependency",
+    "separate-manager-approval",
+    "cloudtrail-alerting-active",
+    "maximum-30-day-waiting-period"
+  ],
+  "failureState": "kms_access_blocked",
+  "destroyingKeyIsDisposition": false
+}

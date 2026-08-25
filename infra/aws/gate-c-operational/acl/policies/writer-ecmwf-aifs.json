@@ -1,0 +1,1 @@
+{"Version":"2012-10-17","Statement":[{"Sid":"PutEcmwfAifsPrefixOnly","Effect":"Allow","Action":["s3:PutObject"],"Resource":"arn:aws:s3:::${RAW_BUCKET}/ecmwf-aifs/*","Condition":{"StringEquals":{"s3:x-amz-server-side-encryption":"aws:kms","s3:x-amz-server-side-encryption-aws-kms-key-id":"${KMS_KEY_ARN}"}}}]}

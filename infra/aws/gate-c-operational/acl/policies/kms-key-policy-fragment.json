@@ -1,0 +1,4 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [{"Sid":"AllowNamedWritersToEncrypt","Effect":"Allow","Principal":{"AWS":["${WRITER_ECMWF_IFS_ROLE_ARN}","${WRITER_NOAA_GFS_ROLE_ARN}","${WRITER_DWD_ICON_ROLE_ARN}","${WRITER_ECMWF_AIFS_ROLE_ARN}"]},"Action":["kms:Encrypt","kms:GenerateDataKey","kms:DescribeKey"],"Resource":"*","Condition":{"StringEquals":{"kms:ViaService":"s3.ap-south-1.amazonaws.com","kms:CallerAccount":"${AWS_ACCOUNT_ID}","kms:EncryptionContext:aws:s3:arn":"arn:aws:s3:::${RAW_BUCKET}"}}},{"Sid":"AllowVerifierToDecrypt","Effect":"Allow","Principal":{"AWS":"${VERIFIER_ROLE_ARN}"},"Action":["kms:Decrypt","kms:DescribeKey"],"Resource":"*","Condition":{"StringEquals":{"kms:ViaService":"s3.ap-south-1.amazonaws.com","kms:CallerAccount":"${AWS_ACCOUNT_ID}","kms:EncryptionContext:aws:s3:arn":"arn:aws:s3:::${RAW_BUCKET}"}}}]
+}

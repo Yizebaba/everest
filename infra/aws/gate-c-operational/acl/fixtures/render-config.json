@@ -1,0 +1,15 @@
+{
+  "region": "ap-south-1",
+  "rawBucket": "everest-forecast-raw-123456789012",
+  "kmsKeyArn": "arn:aws:kms:ap-south-1:123456789012:key/fixture",
+  "accountId": "123456789012",
+  "trustAnchorArn": "arn:aws:rolesanywhere:ap-south-1:123456789012:trust-anchor/fixture",
+  "maxObjectSizeBytes": 10485760,
+  "multipartUploads": false,
+  "workloads": [
+    {"source":"ECMWF IFS","prefix":"ecmwf-ifs","roleName":"everest-writer-ecmwf-ifs","profileName":"everest-profile-ecmwf-ifs","certificateSubject":"everest/ecmwf-ifs/fixture-uuid"},
+    {"source":"NOAA GFS","prefix":"noaa-gfs","roleName":"everest-writer-noaa-gfs","profileName":"everest-profile-noaa-gfs","certificateSubject":"everest/noaa-gfs/fixture-uuid"},
+    {"source":"DWD ICON","prefix":"dwd-icon","roleName":"everest-writer-dwd-icon","profileName":"everest-profile-dwd-icon","certificateSubject":"everest/dwd-icon/fixture-uuid"},
+    {"source":"ECMWF AIFS","prefix":"ecmwf-aifs","roleName":"everest-writer-ecmwf-aifs","profileName":"everest-profile-ecmwf-aifs","certificateSubject":"everest/ecmwf-aifs/fixture-uuid"}
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadBucketLockStateAndVersions",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetBucketObjectLockConfiguration",
+        "s3:GetBucketVersioning",
+        "s3:ListBucketVersions"
+      ],
+      "Resource": "arn:aws:s3:::${RETENTION_BUCKET}"
+    },
+    {
+      "Sid": "ReadAndExtendExactVersionRetention",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObjectLegalHold",
+        "s3:GetObjectRetention",
+        "s3:PutObjectRetention"
+      ],
+      "Resource": "arn:aws:s3:::${RETENTION_BUCKET}/*"
+    }
+  ]
+}
