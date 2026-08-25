@@ -1425,7 +1425,8 @@ one-time code. The credentials and providers differ, so each incident retains
 its own response record; the shared handling weakness has reached count 3 and
 triggers the mandatory pause before any fourth credential-handling attempt.
 
-No further AWS action is authorized while the exposed AWS key remains active.
+No further AWS action is authorized while the replaced backup-admin key remains
+in the local profile.
 
 ### EV-GATEC-OP-ACL-001-MFA-CODE-INCIDENT
 
@@ -1433,7 +1434,9 @@ No further AWS action is authorized while the exposed AWS key remains active.
 **Credential type:** AWS MFA time-based one-time password  
 **Exposure channel:** Conversation  
 **Secret value:** Intentionally not recorded, repeated, validated, or used  
-**Status:** Expired/expiring transient credential; authentication work paused
+**Status:** Expired/expiring transient credential; authentication work paused.
+Account owner confirmed the transient MFA code expired without use; no
+credential material remains active.
 
 An MFA code was pasted into the conversation. It was not used. MFA codes must
 be entered only by the human operator into the local AWS CLI prompt or browser
@@ -1494,6 +1497,14 @@ repeated-failure procedure below. Remaining Block 1 items (approved-CA
 provenance, enabled CRL, `/everest/` roles and disabled profiles, complete
 KMS/bucket policies, and separately authorized nonproduction QA) continue to
 apply unchanged.
+
+**Account-owner closure 2026-08-24:** The account owner confirms the
+`everest-gatec-admin-backup` credential was rotated/deleted and that no
+real-world exposure resulted. The historical "exposure" language above records
+that the value appeared in a conversation transcript; it is not a finding that
+the credential was used outside the account. Current operator identity is the
+least-privilege `everest-gatec-operator`. This paragraph does not re-open or
+reclassify the incident; it records the account owner's final determination.
 
 ### EV-GATEC-OP-ACL-001-LOCAL-PROFILE-INCIDENT-001
 
@@ -1889,7 +1900,7 @@ correct. No denied command was retried.
 Required next evidence must come from a separately authenticated administrator
 or read-only audit principal, not by restoring AdministratorAccess to the
 operator. The evidence must include sanitized role/policy/profile/CRL/analyzer/
-CloudTrail reads, confirmation that the exposed backup-admin key remains absent,
+CloudTrail reads, confirmation that the rotated backup-admin key remains absent,
 and proof that the replacement administrator/recovery path is usable.
 
 Block 1 remains pending independent audit evidence. Block 2 remains closed.
