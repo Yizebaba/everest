@@ -282,3 +282,155 @@ class RawArtifactAuditEventModel(
         Index("ix_raw_audit_artifact_time", "artifact_id", "event_time"),
         Index("ix_raw_audit_due", "audit_due_at"),
     )
+
+
+class WeatherStorageVersionModel(
+    Base
+):  # pylint: disable=too-few-public-methods,too-many-instance-attributes
+    """Exact S3 version projection for a retained raw artifact (B2 DB-04)."""
+
+    __tablename__ = "raw_artifact_storage_version"
+    storage_version_id: Mapped[UUID] = mapped_column(
+        primary_key=True, default=uuid4
+    )
+    artifact_id: Mapped[UUID] = mapped_column(
+        ForeignKey("weather_raw_artifact.artifact_id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    provider: Mapped[str] = mapped_column(String(128), nullable=False)
+    bucket_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    object_key: Mapped[str] = mapped_column(String(1024), nullable=False)
+    version_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    etag: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    checksum_algorithm: Mapped[str | None] = mapped_column(
+        String(32), nullable=True
+    )
+    checksum_value: Mapped[str | None] = mapped_column(
+        String(128), nullable=True
+    )
+    kms_key_arn: Mapped[str] = mapped_column(String(512), nullable=False)
+    observed_retention_mode: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default="UNKNOWN"
+    )
+    observed_retain_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    observed_legal_hold: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default="UNKNOWN"
+    )
+    storage_state: Mapped[str] = mapped_column(
+        String(48), nullable=False, server_default="storage_unclassified"
+    )
+    first_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    policy_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    # SQLAlchemy's dynamic SQL function namespace is callable at runtime.
+    # pylint: disable=not-callable
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    # pylint: enable=not-callable
+    __table_args__ = (
+        CheckConstraint(
+            "bucket_name <> '' AND object_key <> '' AND version_id <> ''",
+            name="ck_storage_identity_nonempty",
+        ),
+        CheckConstraint(
+            "observed_retention_mode IN "
+            "('GOVERNANCE', 'COMPLIANCE', 'UNKNOWN')",
+            name="ck_storage_retention_mode",
+        ),
+        CheckConstraint(
+            "observed_legal_hold IN ('ON', 'OFF', 'UNKNOWN')",
+            name="ck_storage_legal_hold",
+        ),
+        CheckConstraint(
+            "NOT (observed_retention_mode <> 'UNKNOWN' AND "
+            "observed_retain_until IS NULL)",
+            name="ck_storage_retain_until_required",
+        ),
+        CheckConstraint(
+            "(checksum_algorithm IS NULL AND checksum_value IS NULL) OR "
+            "(checksum_algorithm IS NOT NULL AND checksum_value IS NOT NULL)",
+            name="ck_storage_checksum_pair",
+        ),
+        UniqueConstraint(
+            "bucket_name",
+            "object_key",
+            "version_id",
+            name="uq_storage_exact_version",
+        ),
+        Index("ix_storage_artifact_state", "artifact_id", "storage_state"),
+        Index("ix_storage_last_verified", "last_verified_at"),
+        Index("ix_storage_retain_until", "observed_retain_until"),
+    )
+
+
+class WeatherStorageEventModel(
+    Base
+):  # pylint: disable=too-few-public-methods
+    """Append-only, bounded exact-version storage lifecycle event (B2 DB-04)."""
+
+    __tablename__ = "raw_artifact_storage_event"
+    event_id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    storage_version_id: Mapped[UUID] = mapped_column(
+        ForeignKey(
+            "raw_artifact_storage_version.storage_version_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    )
+    bucket_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    object_key: Mapped[str] = mapped_column(String(1024), nullable=False)
+    version_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    result: Mapped[str] = mapped_column(String(16), nullable=False)
+    actor_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    correlation_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    # SQLAlchemy's dynamic SQL function namespace is callable at runtime.
+    # pylint: disable=not-callable
+    event_time: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    # pylint: enable=not-callable
+    details: Mapped[str | None] = mapped_column(
+        String(1024), nullable=True
+    )
+    policy_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    s3_request_id: Mapped[str | None] = mapped_column(
+        String(255), nullable=True
+    )
+    __table_args__ = (
+        CheckConstraint(
+            "event_type IN ('version_observed','default_lock_verified',"
+            "'extension_requested','extension_succeeded','extension_blocked',"
+            "'hold_requested','hold_succeeded','hold_released','hold_blocked',"
+            "'drift_detected','kms_access_blocked','lock_failed',"
+            "'disposition_requested','disposition_approved',"
+            "'delete_requested','delete_succeeded','delete_blocked',"
+            "'version_absence_verified','delete_marker_observed')",
+            name="ck_storage_event_type",
+        ),
+        CheckConstraint(
+            "result IN ('success', 'failure', 'blocked', 'skipped')",
+            name="ck_storage_event_result",
+        ),
+        CheckConstraint(
+            "bucket_name <> '' AND object_key <> '' AND version_id <> ''",
+            name="ck_storage_event_identity_nonempty",
+        ),
+        Index(
+            "ix_storage_event_version",
+            "storage_version_id",
+            "event_time",
+        ),
+        Index("ix_storage_event_type", "event_type", "event_time"),
+    )
