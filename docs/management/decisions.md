@@ -2705,3 +2705,33 @@ not open QA-009 or RELEASE-010; does not change source/API contracts; does not
 authorize release or shared deployment. Production alerting channels (SMTP/
 chat/queue) and the production raw-bucket WORM trail correlation remain
 selections for RELEASE-010.
+
+## EV-GATEC-OP-QA-009 + EV-GATEC-OP-RELEASE-010: operational QA and release gate
+
+**Executed:** 2026-08-25 (Everest Manager)  
+**Status:** QA-009 PASS recorded; RELEASE-010 gate definition recorded. No
+deployment is authorized by this record.
+
+### QA-009 — Independent Operational QA
+
+Re-evaluated the completed Gate C-Operational blocks against live runtime and
+recorded evidence. Live probes confirmed: API `active` with `/healthz` and
+`/readyz` 200; PostgreSQL container healthy; scheduler and monitor timers
+active; 25 persisted forecast records. Offline validators, CloudTrail trail,
+secrets handling, and Git exclusion were re-confirmed. Full record in
+`docs/qa/test-plan.md` (`EV-GATEC-OP-QA-009`). **PASS for the recorded
+nonproduction WSL/Docker runtime.**
+
+### RELEASE-010 — Release gate definition
+
+Defined in `docs/architecture/EV-GATEC-OP-RELEASE-010.md`: the gate requires
+QA-009 PASS, all Gate C blocks satisfied, live runtime health, CloudTrail
+delivery confirmation, no open credential incidents, and a Manager release
+decision. It authorizes no deployment; shared/production deployment, writer
+profile enablement, the production canary, and legal-hold/disposition remain
+separately gated.
+
+### Boundary
+
+These records close the Gate C-Operational definition work. Any actual release
+requires the Manager release decision and the RELEASE-010 checkpoint evidence.

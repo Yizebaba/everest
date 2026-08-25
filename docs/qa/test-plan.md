@@ -2961,3 +2961,62 @@ canary, or permit legal hold / disposition / release.
 This PASS is scoped to B2 Stage-1 through Stage-3 nonproduction evidence. It
 does not authorize the production Compliance canary, writer-profile
 enablement, Block 3, release, legal hold, or disposition.
+
+---
+
+# EV-GATEC-OP-QA-009 — Independent Operational QA (Gate C-Operational)
+
+**Review date:** 2026-08-25  
+**Scope:** Independent re-evaluation of the completed Gate C-Operational blocks
+(B1 ACL/IAM, B2 retention, GIT-003, DB-005, RUNTIME-006, SECRETS-007,
+AUDIT-008) against the recorded decisions, architecture, and live runtime.
+Read-only where possible; re-executed offline validators and live runtime
+probes.
+
+## Verdict
+
+**PASS for the recorded nonproduction WSL/Docker runtime.** The operational
+stack (persistent PostgreSQL, supervised API, 6-hourly scheduler, monitor,
+secrets handling, and CloudTrail audit) is evidenced and healthy. This does not
+open RELEASE-010, authorize shared/production deployment, enable writer
+profiles or the production canary, or permit legal hold / disposition.
+
+## Live runtime probes (2026-08-25)
+
+| Probe | Result |
+| --- | --- |
+| `systemctl is-active everest-api` | **active** |
+| `GET /healthz` | **200** |
+| `GET /readyz` | **200** (DB reachable) |
+| PostgreSQL container | **Up 39 min (healthy)** |
+| Scheduler + monitor timers | **2 active** |
+| `weather_record` rows | **25** (persisted forecast) |
+
+## Block evidence re-executed
+
+| Block | Evidence | Result |
+| --- | --- | --- |
+| B1 ACL-001 | `validate_policies.py` + 22 tests; operator 9/9 reads; MFA roles 3/3; BPA/CMK/trust-anchor readback | **PASS** (recorded re-evaluation) |
+| B2 RETENTION-002 | `validate_assets.py` + 24 tests; Governance bucket + retention positive/negative tests; role reconciliation; DB-04 + SVC-05 | **PASS** (recorded re-evaluation) |
+| GIT-003 | gitleaks clean vs baseline; raw artifacts excluded; remote `Yizebaba/everest` | **PASS** |
+| DB-005 | compose persistent PostgreSQL healthy; backup/restore scripts with non-empty-db guard; migrations at head | **PASS** |
+| RUNTIME-006 | systemd API active + restart-on-failure; scheduler ingests 0-72h (25 leads) with cycle fallback | **PASS** |
+| SECRETS-007 | runtime secrets in operator env file (chmod 600); registry reference-only; gitleaks/redaction verified | **PASS** |
+| AUDIT-008 | healthz/readyz + 5-min monitor; CloudTrail trail logging object data events; audit bucket COMPLIANCE 1095d | **PASS** |
+
+## Remaining / open
+
+- **RELEASE-010** is the next (and final) Gate C-Operational block.
+- Production shared-deployment, writer-profile enablement, and the production
+  Compliance canary remain gated and are not authorized by this QA.
+- CloudTrail log delivery is enabled but not yet correlated to a real retained
+  object event in this QA window; a delivery confirmation is a RELEASE-010
+  checkpoint.
+- Legal-hold/disposition authority and the broker/admin activation transition
+  remain unassigned/uncreated per the remediated B2 contract.
+
+## Boundary
+
+This PASS covers the recorded nonproduction runtime and completed Gate C
+blocks. It does not authorize release, shared/production deployment, or any
+irreversible production operation.

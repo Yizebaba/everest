@@ -54,8 +54,8 @@ stages.
 | EV-GATEC-OP-RUNTIME-006 | Supervised service and current health | COMPLETE (2026-08-25): systemd-managed API on 50149 (active, restart on failure); 6-hourly scheduler timer ingests latest IFS 0-72h (25 leads) with cycle fallback; API verified returning persisted forecast | persistent PostgreSQL (DB-005) | `infra/docker/systemd/`, `apps/api/schedule_forecast.py` |
 | EV-GATEC-OP-SECRETS-007 | Secrets/configuration management | COMPLETE (2026-08-25): runtime secrets via operator env file (chmod 600); non-secret config committed; registry stores reference names only; redaction + gitleaks verified | identity and runtime composition (DB-005/RUNTIME-006) | `docs/architecture/EV-GATEC-OP-SECRETS-007.md` |
 | EV-GATEC-OP-AUDIT-008 | Audit/observability/alerting | COMPLETE (2026-08-25): healthz/readyz + 5-min monitor; CloudTrail trail `everest-operational-audit` logging object data events for approved buckets; audit bucket (COMPLIANCE 1095d) created | Blocks 1-7 | `docs/architecture/EV-GATEC-OP-AUDIT-008.md` |
-| EV-GATEC-OP-QA-009 | Independent operational QA | blocked | Blocks 1-8 | `docs/qa/test-plan.md` |
-| EV-GATEC-OP-RELEASE-010 | Release gate definition | blocked; no release authorized | Gate C-Operational QA pass | `docs/management/board.md` |
+| EV-GATEC-OP-QA-009 | Independent operational QA | COMPLETE (2026-08-25): PASS for recorded nonproduction runtime; live probes + block evidence re-confirmed | Blocks 1-8 | `docs/qa/test-plan.md` |
+| EV-GATEC-OP-RELEASE-010 | Release gate definition | DEFINED (2026-08-25); no deployment authorized; requires Manager release decision + CloudTrail delivery checkpoint | Gate C-Operational QA pass (QA-009) | `docs/architecture/EV-GATEC-OP-RELEASE-010.md` |
 
 Only one block may be `in progress`. The read-only frontend, GIS-3D/Cesium,
 and later data domains remain unauthorized and are not part of the active
