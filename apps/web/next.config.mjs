@@ -4,12 +4,14 @@
 // scripts and should tighten this before shared deployment. img-src https:
 // and connect-src https://tile.openstreetmap.org permit the OSM base layer
 // (interactive viewport-only use per the OSMF Tile Usage Policy; Cesium loads
-// imagery tiles over XHR, which connect-src governs).
+// imagery tiles over XHR, which connect-src governs). api.cesium.com and
+// assets.cesium.com are permitted for Cesium ion assets (World Terrain / 3D
+// Tiles) when NEXT_PUBLIC_CESIUM_ION_TOKEN is set in .env.local.
 const csp = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-eval' 'unsafe-inline'",
   "style-src 'self' 'unsafe-inline'",
-  "connect-src 'self' http://localhost:52147 http://192.168.1.11:52147 https://tile.openstreetmap.org",
+  "connect-src 'self' http://localhost:52147 http://192.168.1.11:52147 https://tile.openstreetmap.org https://api.cesium.com https://assets.cesium.com",
   "img-src 'self' data: https:",
   "font-src 'self'",
   "worker-src 'self' blob:",

@@ -15,10 +15,12 @@ import {
   Color,
   defined,
   Entity,
+  Ion,
   Rectangle,
   ScreenSpaceEventHandler,
   ScreenSpaceEventType,
   SingleTileImageryProvider,
+  Terrain,
   UrlTemplateImageryProvider,
   Viewer,
 } from "cesium";
@@ -26,6 +28,15 @@ import "cesium/Build/Cesium/Widgets/widgets.css";
 
 import type { CanonicalWeatherRecord } from "@/api/types";
 import { AOI_CENTER } from "@/lib/geo";
+
+// Optional Cesium ion token (gitignored via .env.local). When present, the
+// scene enables Cesium World Terrain (real global terrain) and can load
+// ion-hosted 3D Tiles. When absent, the scene renders on the WGS84 ellipsoid
+// with OSM imagery only — no network calls to ion are made.
+const CESIUM_ION_TOKEN = process.env.NEXT_PUBLIC_CESIUM_ION_TOKEN?.trim() ?? "";
+if (typeof window !== "undefined" && CESIUM_ION_TOKEN) {
+  Ion.defaultAccessToken = CESIUM_ION_TOKEN;
+}
 
 export interface EverestSceneProps {
   records: CanonicalWeatherRecord[];
@@ -74,7 +85,7 @@ export function EverestScene({
     try {
       // OSM standard raster tiles (interactive viewport-only use, per the OSMF
       // Tile Usage Policy). Attribution is shown in the scene footer.
-      viewer = new Viewer(container, {
+      const options: ConstructorParameters<typeof Viewer>[1] = {
         baseLayer: false,
         animation: false,
         timeline: false,
@@ -85,7 +96,13 @@ export function EverestScene({
         navigationHelpButton: false,
         infoBox: false,
         fullscreenButton: false,
-      });
+      };
+      if (CESIUM_ION_TOKEN) {
+        // Cesium World Terrain (requires a valid ion token). Falls back to
+        // ellipsoid automatically if the asset stream errors.
+        options.terrain = Terrain.fromWorldTerrain();
+      }
+      viewer = new Viewer(container, options);
       const baseLayer = new UrlTemplateImageryProvider({
         url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
         credit: "© OpenStreetMap contributors",
