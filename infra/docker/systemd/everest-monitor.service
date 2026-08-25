@@ -1,0 +1,8 @@
+[Unit]
+Description=Everest observability monitor run
+After=network.target everest-api.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/mnt/d/Everest/apps/api
+ExecStart=/usr/bin/python3 monitor_service.py
