@@ -1,0 +1,30 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: everest-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: everest
+      POSTGRES_PASSWORD: "${EVEREST_DB_PASSWORD:?EVEREST_DB_PASSWORD must be set}"
+      POSTGRES_DB: everest
+      PGDATA: /var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:${EVEREST_DB_PORT:-56021}:5432"
+    volumes:
+      - everest_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U everest -d everest"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - everest_net
+
+networks:
+  everest_net:
+    name: everest_net
+
+volumes:
+  everest_postgres_data:
+    name: everest_postgres_data
