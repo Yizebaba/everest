@@ -2629,37 +2629,41 @@ or current health. Do not authorize a database rerun solely for documentation.
 ## EV-GATEC-OP-RETENTION-002-OFFLINE — B2 QA skeleton
 
 **Prepared:** 2026-08-24  
-**Status:** Offline foundation awaiting independent review. This record is not
+**Status:** Offline foundation complete; independent offline QA recorded
+2026-08-25 (24 tests PASS, Black/Pylint/compileall clean). This record is not
 AWS, PostgreSQL, runtime, WORM, legal-hold, disposition, or current-health
 evidence. Governance provisioning is the next separate task; the production
 canary remains disabled; B3 is closed.
 
 ### Offline foundation review
 
-- [ ] Parse every JSON policy/resource/state contract.
-- [ ] Run `python validate_assets.py` and focused pytest from
+- [x] Parse every JSON policy/resource/state contract.
+- [x] Run `python validate_assets.py` and focused pytest from
       `infra/aws/gate-c-operational/retention/` without network/AWS access.
-- [ ] Run Black check, Pylint, and independent JSON parse.
-- [ ] Mutations of account, Region, exact bucket names, retention mode/day,
+      **PASS** — `validate_assets.py` exits 0 ("Block-2 offline retention
+      validation passed"); `test_validate_assets.py` **24 passed**.
+- [x] Run Black check, Pylint, and independent JSON parse. **PASS** — Black
+      `--line-length 80` 3 files unchanged; Pylint `10.00/10`; compileall exit 0.
+- [x] Mutations of account, Region, exact bucket names, retention mode/day,
       Governance provisioning flag, canary QA gate/count/size/enabled state,
       role names, Lifecycle absence, and KMS ARN fail closed.
-- [ ] Governance resource is ObjectLock-at-creation + Versioning Enabled +
+- [x] Governance resource is ObjectLock-at-creation + Versioning Enabled +
       default Governance 180; audit resource is default Compliance 1,095.
-- [ ] Production canary is exact one synthetic object, <=1 KiB, Compliance 180,
+- [x] Production canary is exact one synthetic object, <=1 KiB, Compliance 180,
       exact non-null version, disabled until Governance QA PASS.
-- [ ] Retention admin has only approved read/list/extend actions and no bypass,
+- [x] Retention admin has only approved read/list/extend actions and no bypass,
       legal-hold mutation, delete, bucket lock, or Lifecycle mutation.
-- [ ] Legal authority is exact deny-only with null trust/human principal; hold
+- [x] Legal authority is exact deny-only with null trust/human principal; hold
       executor is disabled with no legal-hold permission; disposition executor
       is disabled with no permission.
-- [ ] Audit read policy exposes retention metadata, not payload or mutation.
-- [ ] Writers are explicitly denied retention, hold, read, delete/version-delete,
+- [x] Audit read policy exposes retention metadata, not payload or mutation.
+- [x] Writers are explicitly denied retention, hold, read, delete/version-delete,
       bypass, bucket lock, and Lifecycle mutation.
-- [ ] Bucket policy denies Governance bypass, unversioned delete, Lifecycle and
+- [x] Bucket policy denies Governance bypass, unversioned delete, Lifecycle and
       bucket-lock mutation, and legal hold pending authority assignment.
-- [ ] Exact-version and KMS survival contracts reject delete markers, DB-only
+- [x] Exact-version and KMS survival contracts reject delete markers, DB-only
       authority, key destruction as disposition, and missing version IDs.
-- [ ] Runbook identifies irreversible Compliance behavior, cost, roll-forward
+- [x] Runbook identifies irreversible Compliance behavior, cost, roll-forward
       recovery, no raw/`tmp-*` use, stop conditions, and sanitized evidence.
 
 ### Future Governance provisioning and runtime matrix
