@@ -3,16 +3,24 @@
 import dynamic from "next/dynamic";
 import { useState } from "react";
 
-import { getCurrent, getSatellite, getTerrainTile } from "@/api/client";
+import {
+  getCurrent,
+  getForecast,
+  getSatellite,
+  getTerrainTile,
+} from "@/api/client";
 import { CampLadder } from "@/components/panels/CampLadder";
+import { CurrentWeatherPanel } from "@/components/panels/CurrentWeatherPanel";
 import { ForecastPanel } from "@/components/panels/ForecastPanel";
 import { ModelDisagreement } from "@/components/panels/ModelDisagreement";
 import { ProvenancePopover } from "@/components/panels/ProvenancePopover";
 import { SourcesPanel } from "@/components/panels/SourcesPanel";
 import { SummitWindowPanel } from "@/components/panels/SummitWindowPanel";
 import { TimeNav } from "@/components/panels/TimeNav";
+import { VerticalProfilePanel } from "@/components/panels/VerticalProfilePanel";
 import type { CanonicalWeatherRecord } from "@/api/types";
-import { AOI_CENTER, withinAoi } from "@/lib/geo";
+import { AOI_CENTER } from "@/lib/geo";
+import { selectMapRecords } from "@/lib/weatherFlow";
 import { useApiFetch } from "@/state/useApiFetch";
 
 const EverestScene = dynamic(
@@ -27,14 +35,17 @@ export default function Page(): React.JSX.Element {
   const [activeTime, setActiveTime] = useState<string | null>(null);
 
   const current = useApiFetch(() => getCurrent());
+  const forecast = useApiFetch(() => getForecast());
   const terrain = useApiFetch(() =>
     getTerrainTile(AOI_CENTER.latitude, AOI_CENTER.longitude),
   );
   const satellite = useApiFetch(() => getSatellite());
 
-  const records = (current.data?.records ?? [])
-    .filter((record) => activeTime === null || record.timestamp === activeTime)
-    .filter((record) => withinAoi(record.latitude, record.longitude));
+  const records = selectMapRecords(
+    current.data?.records ?? [],
+    forecast.data?.records ?? [],
+    activeTime,
+  );
 
   return (
     <main className="dashboard">
@@ -47,14 +58,25 @@ export default function Page(): React.JSX.Element {
         />
       </div>
       <aside className="dashboard__rail" aria-label="Data panels">
-        <SummitWindowPanel />
+        <SummitWindowPanel current={current} forecast={forecast} />
+        <CurrentWeatherPanel state={current} />
         <ForecastPanel
+          state={forecast}
           onActiveTimeChange={setActiveTime}
           activeTime={activeTime}
         />
-        <TimeNav activeTime={activeTime} onActiveTimeChange={setActiveTime} />
+        <VerticalProfilePanel records={forecast.data?.records ?? []} />
+        <TimeNav
+          records={forecast.data?.records ?? []}
+          activeTime={activeTime}
+          onActiveTimeChange={setActiveTime}
+        />
         <CampLadder />
-        <ModelDisagreement />
+        <ModelDisagreement
+          records={forecast.data?.records ?? []}
+          loading={forecast.status === "loading"}
+          activeTime={activeTime}
+        />
         <SourcesPanel />
       </aside>
       <ProvenancePopover
