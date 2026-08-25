@@ -2639,10 +2639,13 @@ current-health evidence. The production canary remains disabled; B3 is closed.
 - [x] Parse every JSON policy/resource/state contract.
 - [x] Run `python validate_assets.py` and focused pytest from
       `infra/aws/gate-c-operational/retention/` without network/AWS access.
-      **PASS** — `validate_assets.py` exits 0 ("Block-2 offline retention
-      validation passed"); `test_validate_assets.py` **24 passed**.
-- [x] Run Black check, Pylint, and independent JSON parse. **PASS** — Black
-      `--line-length 80` 3 files unchanged; Pylint `10.00/10`; compileall exit 0.
+      **PASS (2026-08-25 remediation rerun)** — validator exits 0 with
+      `Block-2 offline retention validation passed`; pytest reports **33 passed
+      in 0.07s**.
+- [x] Run Black, Pylint, and independent JSON parse. **PASS (2026-08-25
+      remediation rerun)** — Black formatted 3 files, final `--check` leaves all
+      3 unchanged; Pylint **10.00/10**; independent parse loaded **13 JSON
+      files**. No compileall claim is made for this remediation rerun.
 - [x] Mutations of account, Region, exact bucket names, retention mode/day,
       Governance provisioning flag, canary QA gate/count/size/enabled state,
       role names, Lifecycle absence, and KMS ARN fail closed.
@@ -2698,9 +2701,14 @@ be checked from configuration presence alone:
       implemented 2026-08-25** (migration `20260825_0008`, models
       `WeatherStorageVersionModel`/`WeatherStorageEventModel`, 6 PostgreSQL tests
       PASS, Pylint 10.00/10).
-- [ ] State-machine tests prove exact-version identity, readback-before-success,
+- [x] State-machine tests prove exact-version identity, readback-before-success,
       compare-and-set concurrency, idempotency, drift/KMS blocking, and disabled
-      hold/disposition commands. (SVC-05 not yet implemented)
+      hold/disposition commands. **SVC-05 implemented 2026-08-25**
+      (`everest_api/weather/storage.py`): 8 deterministic unit tests PASS
+      covering identity rejection, uploaded→default_lock_verified_180d,
+      failed_retained_180d, 730-day extension, drift blocking, KMS blocking, and
+      typed disabled hold/disposition results; Pylint 10.00/10; no SDK/framework
+      import in the module.
 - [ ] Public API regression proves no bucket/key/version/KMS/retention leakage
       and no weather semantic change.
 - [ ] Teardown preserves retained synthetic versions and their CMK dependency;
@@ -2711,6 +2719,14 @@ be checked from configuration presence alone:
 **Acceptance boundary:** Offline PASS may authorize review/provisioning planning
 only. It cannot close B2, Gate C-Operational, or B1; cannot enable a role; and
 cannot authorize legal hold, disposition, canary, B3, or release.
+
+**Historical-state reconciliation blocker:** the 2026-08-25 provisioning record
+in management decisions says five placeholder/disabled roles were created in
+AWS. This offline remediation requires legal/hold/disposition roles absent and
+broker/admin uncreated until activation. No AWS read or mutation was authorized,
+so current cloud state is **unknown** and this mismatch must be independently
+reviewed and reconciled before Governance QA. Offline tests do not prove role
+absence in AWS.
 
 ---
 
