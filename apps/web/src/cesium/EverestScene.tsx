@@ -8,8 +8,10 @@ import {
   Color,
   defined,
   Entity,
+  Rectangle,
   ScreenSpaceEventHandler,
   ScreenSpaceEventType,
+  SingleTileImageryProvider,
   UrlTemplateImageryProvider,
   Viewer,
 } from "cesium";
@@ -41,11 +43,11 @@ const SOURCE_COLORS: Record<string, string> = {
 
 export function EverestScene({
   records,
-  satelliteSegments,
   onSelectRecord,
 }: EverestSceneProps): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewerRef = useRef<Viewer | null>(null);
+  const terrainTilesetRef = useRef<Cesium3DTileset | null>(null);
   const entityByRecord = useRef(new Map<string, Entity>());
   const onSelectRef = useRef(onSelectRecord);
   onSelectRef.current = onSelectRecord;
@@ -182,25 +184,25 @@ export function EverestScene({
     if (!viewer) {
       return;
     }
-    const terrainEntities = viewer.entities.values.filter((entity) =>
-      String(entity.id).startsWith("terrain-"),
-    );
-    terrainEntities.forEach((entity) => viewer.entities.remove(entity));
-    const existing = viewer.scene.primitives._primitives.find(
-      (primitive: { id?: string }) => primitive?.id === "everest-terrain-tiles",
-    );
-    if (existing) {
-      viewer.scene.primitives.remove(existing);
+    if (terrainTilesetRef.current) {
+      viewer.scene.primitives.remove(terrainTilesetRef.current);
+      terrainTilesetRef.current = null;
     }
     if (showTerrain) {
       const tileset = new Cesium3DTileset({
         url: "/tiles/tileset.json",
         maximumScreenSpaceError: 16,
-      });
-      (tileset as unknown as { id: string }).id = "everest-terrain-tiles";
+      } as never);
+      terrainTilesetRef.current = tileset;
       viewer.scene.primitives.add(tileset);
-      void tileset.readyPromise.then(() => {
-        viewer.zoomTo(tileset, new Cesium3DTileset.HeadingPitchRange(0, -0.6, 300000));
+      const tilesetAny = tileset as unknown as {
+        readyPromise: Promise<unknown>;
+        boundingSphere: { center: Cartesian3 };
+      };
+      void tilesetAny.readyPromise.then(() => {
+        viewer.camera.flyTo({
+          destination: tilesetAny.boundingSphere.center,
+        });
       });
     }
   }, [showTerrain]);
@@ -210,28 +212,25 @@ export function EverestScene({
     if (!viewer) {
       return;
     }
-    const satelliteEntities = viewer.entities.values.filter((entity) =>
-      String(entity.id).startsWith("satellite-"),
-    );
-    satelliteEntities.forEach((entity) => viewer.entities.remove(entity));
-    if (showSatellite && satelliteSegments.length > 0) {
-      viewer.entities.add(
-        new Entity({
-          id: "satellite-note",
-          position: Cartesian3.fromDegrees(
-            AOI_CENTER.longitude,
-            AOI_CENTER.latitude,
-            6000,
-          ),
-          label: {
-            text: `Himawari band segments: ${satelliteSegments.length} · decode pending`,
-            fillColor: Color.fromCssColorString("#F472B6"),
-            scale: 0.8,
-          },
-        }),
-      );
+    const layers = viewer.imageryLayers;
+    for (let i = layers.length - 1; i >= 0; i -= 1) {
+      const layer = layers.get(i);
+      const provider = (layer as unknown as {
+        _provider?: { url?: string };
+      })._provider;
+      if (provider?.url?.includes("everest-rgb")) {
+        layers.remove(layer);
+      }
     }
-  }, [showSatellite, satelliteSegments]);
+    if (showSatellite) {
+      const provider = new SingleTileImageryProvider({
+        url: "/satellite/everest-rgb.png",
+        rectangle: Rectangle.fromDegrees(86.8, 27.85, 87.05, 28.05),
+      });
+      const layer = viewer.imageryLayers.addImageryProvider(provider);
+      layer.alpha = 0.85;
+    }
+  }, [showSatellite]);
 
   useEffect(() => {
     const viewer = viewerRef.current;
