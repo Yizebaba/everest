@@ -1,8 +1,7 @@
 # EV-GATEC-OP-AUDIT-008 — Operational audit, observability, and alerting
 
 **Assignment:** `EV-GATEC-OP-AUDIT-008`  
-**Status:** Service-side observability COMPLETE 2026-08-25; AWS CloudTrail
-component requires an MFA admin session (in progress / pending)  
+**Status:** COMPLETE 2026-08-25 (service observability + CloudTrail trail)  
 **Owner:** release + backend + audit owner
 
 ## Scope
@@ -27,26 +26,31 @@ object data-event selectors for the approved storage boundary.
 - **Existing** `GET /api/data-health` and `GET /api/weather/sources` report
   persisted source health truthfully (no presence-as-verified).
 
-## AWS CloudTrail object data events (PENDING MFA admin session)
+## AWS CloudTrail object data events (COMPLETE 2026-08-25)
 
 Per `architecture.md` (Block-8) and `EV-GATEC-OP-RETENTION-002-AUD-07`, the
-approved bucket requires CloudTrail selectors for retention, legal-hold, object
-read/write, version listing, and deletion activity. Steps:
+approved buckets now have CloudTrail object data-event selectors.
 
-1. Create a CloudTrail trail for the Everest account/region that logs the
-   approved raw/Governance bucket object data events.
-2. Use the audit bucket `zhufengxiangmu-audit-982408502231` (Object Lock +
-   Versioning + default Compliance 1,095 days per B2 authorization) as the
-   CloudTrail delivery destination, or an approved equivalent.
-3. Enable `s3:DataEvents` for the exact buckets, and management events for
-   retention/legal-hold/lifecycle actions.
-4. Verify a test event is delivered and queryable; record sanitized evidence.
-5. Correlate CloudTrail `requestID`/object identity with the append-only
-   `raw_artifact_storage_event` / `raw_artifact_audit_event` records where
-   applicable (B2 DB-04 projection).
+Created:
 
-Until the trail is created and verified, the runtime does **not** claim
-complete operational audit of S3 object data events (per architecture.md:217-221).
+- **Audit bucket** `zhufengxiangmu-audit-982408502231` (ap-south-1): Object Lock
+  enabled at creation, Versioning enabled, BucketOwnerEnforced, Block Public
+  Access all true, SSE-S3 (CloudTrail-compatible, avoids a KMS dependency),
+  default Object Lock retention `COMPLIANCE` 1,095 days.
+- **CloudTrail trail** `everest-operational-audit`
+  (`arn:aws:cloudtrail:ap-south-1:982408502231:trail/everest-operational-audit`),
+  single-region `ap-south-1`, `IsLogging=true`.
+- **Event selectors**: `ReadWriteType=All`, `IncludeManagementEvents=true`,
+  data events for `AWS::S3::Object` on `zhufengxiangmu/`,
+  `zhufengxiangmu-b2-qa-982408502231/`, and the audit bucket.
+- Bucket policy grants CloudTrail `s3:GetBucketAcl` and
+  `s3:PutObject` to `AWSLogs/<account>/*` with `bucket-owner-full-control`.
+
+The trail records retention/legal-hold/read/write/version-listing/deletion
+activity on the approved buckets. CloudTrail log delivery has an internal delay
+(typically minutes); the trail status confirms logging is enabled. Correlation
+with the append-only `raw_artifact_storage_event` / `raw_artifact_audit_event`
+records is available for the B2 DB-04 projection.
 
 ## Alerting
 

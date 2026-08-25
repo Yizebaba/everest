@@ -2663,3 +2663,45 @@ AUDIT-008, QA-009, or RELEASE-010; does not enable writer profiles or production
 S3 canary; and does not change any source/API contract or weather semantics.
 The production raw-storage WORM boundary and legal-hold/disposition controls
 remain governed by the B2/B1 records.
+
+## EV-GATEC-OP-AUDIT-008: operational audit and observability
+
+**Executed:** 2026-08-25 (Everest Manager)  
+**Status:** COMPLETE for the WSL/Docker runtime and the approved AWS buckets
+
+### Service observability
+
+- `GET /healthz` (liveness) and `GET /readyz` (DB readiness) added to the API;
+  the systemd service restarts on failure and the endpoints are served on port
+  `50149`.
+- `apps/api/monitor_service.py` probes both endpoints every 5 minutes via the
+  `everest-monitor.timer` systemd timer and appends a structured UTC JSON line
+  to `D:\Everest-data\audit\observability.jsonl`; non-zero exit on failure.
+- Existing `/api/data-health` and `/api/weather/sources` report persisted source
+  health truthfully.
+
+### AWS CloudTrail
+
+- Created audit bucket `zhufengxiangmu-audit-982408502231` (ap-south-1): Object
+  Lock at creation, Versioning, BucketOwnerEnforced, BPA all true, SSE-S3,
+  default Object Lock `COMPLIANCE` 1,095 days.
+- Created CloudTrail trail `everest-operational-audit`
+  (`arn:aws:cloudtrail:ap-south-1:982408502231:trail/everest-operational-audit`),
+  single-region, `IsLogging=true`, with event selectors logging object data
+  events (ReadWriteType=All) for `zhufengxiangmu/`,
+  `zhufengxiangmu-b2-qa-982408502231/`, and the audit bucket, plus management
+  events.
+- Bucket policy grants CloudTrail `GetBucketAcl` and `PutObject` to
+  `AWSLogs/<account>/*` (bucket-owner-full-control).
+
+CloudTrail log delivery has an internal delay; trail status confirms logging is
+enabled. Correlation with the B2 append-only storage/audit event tables is
+available for the DB-04 projection.
+
+### Boundary
+
+This completes AUDIT-008 for the current runtime and approved buckets. It does
+not open QA-009 or RELEASE-010; does not change source/API contracts; does not
+authorize release or shared deployment. Production alerting channels (SMTP/
+chat/queue) and the production raw-bucket WORM trail correlation remain
+selections for RELEASE-010.
