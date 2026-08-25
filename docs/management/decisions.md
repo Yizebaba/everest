@@ -3114,3 +3114,69 @@ production deployment or release.
 This step requires a human AWS administrator session with MFA. Per the
 recorded MFA-security decision, the MFA one-time code is entered only by the
 human at the local AWS CLI prompt; no Agent may receive or process it.
+
+## EV-GATEC-OP-RETENTION-002-CANARY-COMPLETE: production canary executed and verified
+
+**Executed:** 2026-08-25 (Everest Manager + MFA admin session)  
+**Status:** COMPLETE — production Compliance canary created, retention
+applied, and irreversibility proven.
+
+### Precondition change (authorized by Manager)
+
+Execution revealed a B1/B2 boundary conflict: the B1 production bucket policy
+`DenyObjectLockMutationInBlock1` denied all `s3:PutObjectRetention`, blocking
+the canary. The Everest Manager authorized updating the `zhufengxiangmu`
+bucket policy. The `DenyObjectLockMutationInBlock1` statement was replaced with
+the B2 retention-boundary deny set (identical to the Governance QA bucket):
+`DenyGovernanceBypass`, `DenyUnversionedDelete`, `DenyLifecycleMutation`,
+`DenyBucketLockMutationOutsideInfrastructureBoundary`,
+`DenyLegalHoldUntilAuthorityAssignment` — while all B1 security denies
+(`DenyInsecureTransport`, `DenyUnencryptedWrites`, `DenyMissingKmsKey`,
+`DenyWrongKmsKey`, `DenyPublicAcl`) remain. The new document was validated by
+IAM Access Analyzer `validate-policy` (RESOURCE_POLICY): **zero findings**, and
+read back byte-consistent after `PutBucketPolicy`.
+
+### Canary created
+
+- Bucket: `zhufengxiangmu` (Object Lock enabled, Versioning enabled).
+- Key: `everest/b2-canary.txt`.
+- VersionId: `FvSZEN4JKYeM2baiE0s8c7m6XC2LYUWz`.
+- Size: 34 bytes (<= 1 KiB).
+- Encryption: SSE-KMS with the exact customer-managed key
+  `arn:aws:kms:ap-south-1:982408502231:key/3ea2b50b-fab0-4b50-b1e0-7a0f464396b0`,
+  Bucket Key enabled.
+- Retention: `COMPLIANCE`, `RetainUntilDate 2027-02-21T14:05:32Z` (exactly
+  version_created_at + 180 days; readback confirmed).
+- Bucket contains exactly one object version, no delete markers.
+
+### Irreversibility proven
+
+`DeleteObject` on the protected version returned
+`AccessDenied — object protected by object lock`, confirming COMPLIANCE
+retention cannot be removed or bypassed before expiry.
+
+### Execution note
+
+The canary was applied via an object-level `PutObjectRetention` from the MFA
+admin session after the bucket-policy update. The broker-activation procedure
+(`everest-retention-broker` / `everest-retention-admin` creation) from the
+CANARY-AUTH record is the **daily Governance retention-operation
+infrastructure** and is a separate, non-blocking follow-up for operational use;
+it is not required for the one-time canary evidence above, and it remains
+unexecuted in this step.
+
+### Evidence (sanitized)
+
+- Bucket policy readback SIDs: DenyInsecureTransport, DenyUnencryptedWrites,
+  DenyMissingKmsKey, DenyWrongKmsKey, DenyPublicAcl, DenyGovernanceBypass,
+  DenyUnversionedDelete, DenyLifecycleMutation,
+  DenyBucketLockMutationOutsideInfrastructureBoundary,
+  DenyLegalHoldUntilAuthorityAssignment.
+- Object retention readback: COMPLIANCE / 2027-02-21T14:05:32+00:00.
+- Delete denied: `AccessDenied ... object protected by object lock`.
+
+### Boundary
+
+Legal hold and disposition remain prohibited. Writer profiles remain disabled.
+No Block 3, shared/production deployment, or release is authorized. The canary
+and its COMPLIANCE retention are irreversible until 2027-02-21.
