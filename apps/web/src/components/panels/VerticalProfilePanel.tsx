@@ -111,10 +111,7 @@ export function VerticalProfilePanel({
       </div>
       <style jsx>{`
         .profile-panel {
-          border: 1px solid #232c40;
-          border-radius: 8px;
-          padding: 12px;
-          background: #10141d;
+          background: transparent;
         }
         .profile-panel__title {
           font-size: 0.85rem;

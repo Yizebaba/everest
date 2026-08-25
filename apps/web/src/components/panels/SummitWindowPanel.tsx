@@ -176,10 +176,7 @@ export function SummitWindowPanel({
       )}
       <style jsx>{`
         .summit-window {
-          border: 1px solid #232c40;
-          border-radius: 8px;
-          padding: 16px;
-          background: #111623;
+          background: transparent;
         }
         .summit-window__state {
           font-weight: 700;

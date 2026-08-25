@@ -203,29 +203,30 @@ export function EverestScene({
       terrainTilesetRef.current = null;
     }
     if (showTerrain) {
-      // Cesium resource/worker wiring can fail under webpack; never let it
+      // Cesium resource/worker wiring can fail under bundlers; never let it
       // crash the whole page — the scene degrades to the base view instead.
-      try {
-        const tileset = new Cesium3DTileset({
-          url: "/tiles/tileset.json",
-          maximumScreenSpaceError: 16,
-        } as never);
-        terrainTilesetRef.current = tileset;
-        viewer.scene.primitives.add(tileset);
-        const tilesetAny = tileset as unknown as {
-          readyPromise?: Promise<unknown>;
-          boundingSphere?: { center: Cartesian3 };
-        };
-        void tilesetAny.readyPromise?.then(() => {
-          if (tilesetAny.boundingSphere) {
-            viewer.camera.flyTo({
-              destination: tilesetAny.boundingSphere.center,
+      void (async () => {
+        try {
+          // Cesium 1.144+: tilesets load through Cesium3DTileset.fromUrl
+          // (the constructor no longer fetches from a url option).
+          const tileset = await Cesium3DTileset.fromUrl("/tiles/tileset.json", {
+            maximumScreenSpaceError: 16,
+          });
+          const current = viewerRef.current;
+          if (!current) {
+            return;
+          }
+          terrainTilesetRef.current = tileset;
+          current.scene.primitives.add(tileset);
+          if (tileset.boundingSphere) {
+            current.camera.flyTo({
+              destination: tileset.boundingSphere.center,
             });
           }
-        });
-      } catch (error) {
-        console.error("terrain tileset load failed:", error);
-      }
+        } catch (error) {
+          console.error("terrain tileset load failed:", error);
+        }
+      })();
     }
   }, [showTerrain]);
 
@@ -251,6 +252,8 @@ export function EverestScene({
         const provider = new SingleTileImageryProvider({
           url: "/satellite/everest-rgb.png",
           rectangle: Rectangle.fromDegrees(86.8, 27.85, 87.05, 28.05),
+          tileWidth: 512,
+          tileHeight: 512,
         });
         const layer = viewer.imageryLayers.addImageryProvider(provider);
         layer.alpha = 0.85;
@@ -335,6 +338,23 @@ export function EverestScene({
           left: 12px;
           display: flex;
           gap: 8px;
+        }
+        .scene__controls button {
+          background: #141a24;
+          color: #e6eaf2;
+          border: 1px solid #2c3a52;
+          border-radius: 6px;
+          padding: 6px 12px;
+          font-size: 13px;
+          cursor: pointer;
+        }
+        .scene__controls button:hover {
+          border-color: #3b4c6b;
+        }
+        .scene__controls button[aria-pressed="true"] {
+          background: #2c3a52;
+          border-color: #38bdf8;
+          color: #38bdf8;
         }
       `}</style>
     </div>

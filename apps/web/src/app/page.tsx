@@ -103,6 +103,13 @@ export default function Page(): React.JSX.Element {
           display: flex;
           flex-direction: column;
           gap: 16px;
+          background: #0d1117;
+        }
+        .dashboard__rail > :global(section),
+        .dashboard__rail > :global(div) {
+          background: #141a24;
+          border: 1px solid #232c40;
+          border-radius: 8px;
         }
       `}</style>
     </main>
