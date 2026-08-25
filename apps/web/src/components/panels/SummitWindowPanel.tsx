@@ -2,8 +2,12 @@
 
 import { useMemo } from "react";
 
-import { getCurrent, getForecast, getProfile } from "@/api/client";
-import type { CanonicalWeatherRecord } from "@/api/types";
+import { getProfile } from "@/api/client";
+import type {
+  CanonicalWeatherRecord,
+  CurrentResponse,
+  ForecastResponse,
+} from "@/api/types";
 import { SUMMIT_THRESHOLDS, STALE_AFTER_HOURS } from "@/config/summitWindow";
 import { summitBasisRecord } from "@/lib/geo";
 import {
@@ -13,11 +17,17 @@ import {
   formatWindDirection,
   formatWindSpeed,
 } from "@/lib/units";
-import { useApiFetch } from "@/state/useApiFetch";
+import { useApiFetch, type FetchState } from "@/state/useApiFetch";
 
 export type SummitScore = "GO" | "CAUTION" | "STOP";
 
-function scoreWind(windSpeed: number): SummitScore {
+export function scoreSummitRecord(
+  record: CanonicalWeatherRecord,
+): SummitScore | null {
+  if (!isClean(record) || record.wind_speed === null) {
+    return null;
+  }
+  const windSpeed = record.wind_speed;
   if (windSpeed <= SUMMIT_THRESHOLDS.goMaxWind) {
     return "GO";
   }
@@ -28,12 +38,21 @@ function scoreWind(windSpeed: number): SummitScore {
 }
 
 function isClean(record: CanonicalWeatherRecord): boolean {
-  return record.quality_flags.every((flag) => flag === "clean");
+  return (
+    record.quality_flags.length > 0 &&
+    record.quality_flags.every((flag) => flag === "clean")
+  );
 }
 
-export function SummitWindowPanel(): React.JSX.Element {
-  const current = useApiFetch(() => getCurrent());
-  const forecast = useApiFetch(() => getForecast());
+export interface SummitWindowPanelProps {
+  current: FetchState<CurrentResponse>;
+  forecast: FetchState<ForecastResponse>;
+}
+
+export function SummitWindowPanel({
+  current,
+  forecast,
+}: SummitWindowPanelProps): React.JSX.Element {
   const profile = useApiFetch(() => getProfile("SUMMIT"));
 
   const pool: CanonicalWeatherRecord[] = useMemo(
@@ -66,7 +85,10 @@ export function SummitWindowPanel(): React.JSX.Element {
       }
       cleanSources += 1;
       if (record.wind_speed !== null && record.wind_speed !== undefined) {
-        counts[scoreWind(record.wind_speed)] += 1;
+        const score = scoreSummitRecord(record);
+        if (score) {
+          counts[score] += 1;
+        }
       }
       const hoursOld =
         (Date.now() - new Date(record.timestamp).getTime()) / 3_600_000;
@@ -89,14 +111,12 @@ export function SummitWindowPanel(): React.JSX.Element {
         <p>No data for this selection</p>
       ) : (
         <>
-          {isClean(basis) &&
-          basis.wind_speed !== null &&
-          basis.wind_speed !== undefined ? (
+          {scoreSummitRecord(basis) ? (
             <p
               className="summit-window__state"
-              data-state={scoreWind(basis.wind_speed).toLowerCase()}
+              data-state={scoreSummitRecord(basis)?.toLowerCase()}
             >
-              {scoreWind(basis.wind_speed)}
+              {scoreSummitRecord(basis)}
             </p>
           ) : (
             <p className="summit-window__state" data-state="unavailable">
@@ -111,35 +131,21 @@ export function SummitWindowPanel(): React.JSX.Element {
           <dl className="summit-window__values">
             <div>
               <dt>Temperature</dt>
-              <dd>
-                {isClean(basis)
-                  ? formatTemperature(basis.temperature ?? null)
-                  : "unavailable"}
-              </dd>
+              <dd>{formatTemperature(basis.temperature ?? null)}</dd>
             </div>
             <div>
               <dt>Wind</dt>
               <dd>
-                {isClean(basis)
-                  ? `${formatWindSpeed(basis.wind_speed ?? null)} · ${formatWindDirection(basis.wind_direction ?? null)}`
-                  : "unavailable"}
+                {`${formatWindSpeed(basis.wind_speed ?? null)} · ${formatWindDirection(basis.wind_direction ?? null)}`}
               </dd>
             </div>
             <div>
               <dt>Visibility</dt>
-              <dd>
-                {isClean(basis)
-                  ? formatVisibility(basis.visibility ?? null)
-                  : "unavailable"}
-              </dd>
+              <dd>{formatVisibility(basis.visibility ?? null)}</dd>
             </div>
             <div>
               <dt>Precipitation</dt>
-              <dd>
-                {isClean(basis)
-                  ? formatPrecipitation(basis.precipitation ?? null)
-                  : "unavailable"}
-              </dd>
+              <dd>{formatPrecipitation(basis.precipitation ?? null)}</dd>
             </div>
           </dl>
           <p className="summit-window__basis">

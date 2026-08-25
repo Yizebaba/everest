@@ -12,7 +12,7 @@ import json
 import sys
 import urllib.request
 
-API = "http://127.0.0.1:50149"
+API = "http://127.0.0.1:52147"
 LOG_PATH = "/mnt/d/Everest-data/audit/observability.jsonl"
 
 

@@ -53,6 +53,9 @@ def _require_raw() -> dict[str, Path]:
 
 
 def _ingest(session: Session) -> None:
+    # pylint: disable=too-many-locals,import-outside-toplevel
+    # The fixture composes three independent provider pipelines in one helper;
+    # each required parser/normalizer import is intentionally a local name.
     from everest_aws.parser import parse_rows  # type: ignore[import-not-found]
     from everest_aws.qc import run_qc as aws_qc  # type: ignore[import-not-found]
     from everest_api.sources.normalizers import (
@@ -154,6 +157,7 @@ def _engine():
 
 
 def test_terrain_api_returns_tile_and_no_leak() -> None:
+    """Terrain API returns the persisted GLO-30 tile without raw references."""
     engine = _engine()
     with Session(engine) as session:
         _ingest(session)
@@ -174,6 +178,7 @@ def test_terrain_api_returns_tile_and_no_leak() -> None:
 
 
 def test_observations_api_returns_current() -> None:
+    """Observations API returns one current record per Everest AWS station."""
     engine = _engine()
     with Session(engine) as session:
         _ingest(session)
@@ -187,6 +192,7 @@ def test_observations_api_returns_current() -> None:
 
 
 def test_satellite_api_returns_segments_and_no_leak() -> None:
+    """Satellite API returns persisted segments without raw references."""
     engine = _engine()
     with Session(engine) as session:
         _ingest(session)

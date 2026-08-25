@@ -79,7 +79,10 @@ export function VerticalProfilePanel({
               : ((temp - minTemp) / (maxTemp - minTemp)) * 100;
           const windPct = wind === null ? 0 : (wind / maxWind) * 100;
           return (
-            <div className="profile-row" key={level.spatial_key}>
+            <div
+              className="profile-row"
+              key={`${level.spatial_key}-${level.timestamp}`}
+            >
               <span className="profile-row__level">
                 {level.altitude.toFixed(0)}m
               </span>

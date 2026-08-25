@@ -2,13 +2,14 @@
 // 'unsafe-eval' is required by Cesium (WebGL shader compilation). 'unsafe-inline'
 // is required by Next.js dev-mode inline scripts; production builds use external
 // scripts and should tighten this before shared deployment. img-src https:
-// permits OSM raster tiles from tile.openstreetmap.org (interactive
-// viewport-only use per the OSMF Tile Usage Policy).
+// and connect-src https://tile.openstreetmap.org permit the OSM base layer
+// (interactive viewport-only use per the OSMF Tile Usage Policy; Cesium loads
+// imagery tiles over XHR, which connect-src governs).
 const csp = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-eval' 'unsafe-inline'",
   "style-src 'self' 'unsafe-inline'",
-  "connect-src 'self' http://localhost:50149 http://192.168.1.11:50149",
+  "connect-src 'self' http://localhost:52147 http://192.168.1.11:52147 https://tile.openstreetmap.org",
   "img-src 'self' data: https:",
   "font-src 'self'",
   "worker-src 'self' blob:",

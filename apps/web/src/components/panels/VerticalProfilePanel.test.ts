@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import type { CanonicalWeatherRecord } from "@/api/types";
 import { pressureLevels } from "./VerticalProfilePanel";
 
-function record(partial: Partial<CanonicalWeatherRecord>): CanonicalWeatherRecord {
+function record(
+  partial: Partial<CanonicalWeatherRecord>,
+): CanonicalWeatherRecord {
   return {
     record_type: "forecast",
     timestamp: "2026-08-24T00:00:00Z",
@@ -45,6 +47,8 @@ describe("pressureLevels", () => {
   });
 
   it("returns empty when no pressure-level records", () => {
-    expect(pressureLevels([record({ spatial_key: "ifs:surface" })])).toEqual([]);
+    expect(pressureLevels([record({ spatial_key: "ifs:surface" })])).toEqual(
+      [],
+    );
   });
 });

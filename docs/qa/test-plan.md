@@ -3023,11 +3023,76 @@ irreversible production operation.
 
 ---
 
+# EV-UI-001-INTEGRATION-RETRY-QA — Frontend integration re-verification
+
+**Review date:** 2026-08-25  
+**Scope:** Re-verification of the browser-to-API integration after the ADR-020
+port re-home and the EV-UI-001 repair fixes, using a live WSL/Docker runtime
+and real persisted data.
+
+## Verdict
+
+**PASS.** The frontend now runs on http://localhost:52148, consumes the
+Everest API on http://localhost:52147, and renders real persisted canonical
+records with truthful source/health semantics. The earlier
+EV-UI-001-INTEGRATION-AUDIT-QA NO-GO findings are resolved.
+
+## Runtime evidence (2026-08-25)
+
+| Probe | Result |
+| --- | --- |
+| systemctl is-active everest-api | **active** on port 52147 |
+| GET /healthz | **200** |
+| GET /readyz | **200** (PostgreSQL reachable) |
+| CORS preflight (origin http://localhost:52148, X-Correlation-ID) | **200**; llow-methods: GET, OPTIONS; no credentials |
+| GET /api/weather/current | **200**; 58 records; UTC Z timestamps |
+| GET /api/weather/forecast | **200**; 58 records; UTC Z timestamps |
+| GET /api/weather/profile?profile=SUMMIT | **200**; empty (no invented camp geometry) |
+| GET /api/weather/sources | **200**; persisted lifecycle facts |
+| GET /api/data-health | **200**; persisted health facts |
+| GET /api/terrain/tile, /observations/current, /satellite/segments | **200**; real persisted ADR-019 rows |
+| Browser E2E (Playwright chromium) | page HTTP 200, panels render real IFS data, **zero console errors** |
+
+## Automated results
+
+- Web: **37 passed** (vitest), typecheck clean, eslint clean, prettier clean,
+  production build passes.
+- API: **67 passed, 28 skipped** (PG-dependent tests skipped without a test DB
+  URL); weather service: **111 passed**; focused pressure scheduler: **2 passed**.
+- API Black/pylint: **10.00/10** with documented PYTHONPATH.
+
+## Findings resolved from the prior NO-GO
+
+1. **CORS preflight 405** — fixed in pps/api/everest_api/app.py
+   (GET/OPTIONS, X-Correlation-ID allowed and exposed, no credentials,
+   config-driven origin list); regression test
+   	est_cors_allows_approved_origin_and_rejects_other_origin.
+2. **Datetimes not UTC Z** — fixed with _utc_z serialization across weather,
+   sources, data-health, terrain, observations, and satellite routes; regression
+   tests assert positive-offset database values serialize to Z.
+3. **No usable frontend runtime** — root cause was the Windows excluded port
+   range 50060-50159 blocking 50149/50151 binds in WSL mirrored networking;
+   ADR-020 re-homes API to 52147 and frontend to 52148, both bind-verified.
+4. **Forecast/current data flow** — pps/web/src/lib/weatherFlow.ts drives the
+   map from the validated forecast set when a time is selected and from current
+   otherwise; unit tests cover both branches.
+5. **Duplicate React keys / OSM tiles** — record keys now include spatial_key
+   and orecast_cycle; CSP connect-src allows 	ile.openstreetmap.org.
+
+## Boundary
+
+This records re-verification of the local WSL/Docker runtime only. Current
+four-source data remains scheduler-scoped (only IFS is ingested on the live
+schedule; GFS/ICON/AIFS connectors retain their historical disposable
+acceptance). No production, shared, or public deployment claim is made; no
+release is authorized; no external provider is called by the frontend.
+
+---
+
 # EV-SOURCES-ADR019 — Terrain / AWS Station / Satellite Independent QA
 
 **Review date:** 2026-08-25  
 **Scope:** Independent re-evaluation of the ADR-019 sources (Copernicus DEM
-GLO-30 terrain, Everest AWS station, Himawari satellite) against
 `docs/qa/EV-SOURCES-ADR019-handoff.md` and the running backend.
 
 ## Verdict

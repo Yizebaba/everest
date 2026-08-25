@@ -19,7 +19,10 @@ export function SourcesPanel(): React.JSX.Element {
     const error = sources.error ?? health.error;
     return (
       <section aria-label="Sources">
-        {t("app.apiError")}: {error}{" "}
+        {t("app.apiError")}: {error?.message ?? "Request failed"}{" "}
+        {error && "correlationId" in error && (
+          <span>Correlation ID: {String(error.correlationId)} </span>
+        )}
         <button type="button" onClick={sources.refetch}>
           {t("app.retry")}
         </button>

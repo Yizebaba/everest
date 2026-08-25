@@ -8,7 +8,7 @@ Type=simple
 WorkingDirectory=/mnt/d/Everest/apps/api
 EnvironmentFile=/root/.everest/db.env
 Environment=PYTHONPATH=/mnt/d/Everest:/mnt/d/Everest/apps/api:/mnt/d/Everest/packages/weather_ingestion_contract
-Environment=EVEREST_API_PORT=50149
+Environment=EVEREST_API_PORT=52147
 ExecStart=/usr/bin/python3 -c "import os; os.environ['EVEREST_DATABASE_URL']='postgresql+psycopg://everest:'+os.environ['EVEREST_DB_PASSWORD']+'@127.0.0.1:56021/everest'; import run_dev; run_dev.main()"
 Restart=on-failure
 RestartSec=3

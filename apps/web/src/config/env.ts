@@ -15,12 +15,8 @@ function requireHttpOrigin(value: string | undefined): string {
   return value.replace(/\/$/, "");
 }
 
-export function loadConfig(env: Record<string, string | undefined>): AppConfig {
-  return {
-    apiBaseUrl: requireHttpOrigin(env.NEXT_PUBLIC_EVEREST_API_BASE_URL),
-  };
-}
-
-export const config: AppConfig = loadConfig(
-  typeof process !== "undefined" ? process.env : {},
-);
+// Direct member access on process.env.NEXT_PUBLIC_* is required so webpack
+// DefinePlugin inlines the value into the client bundle.
+export const config: AppConfig = {
+  apiBaseUrl: requireHttpOrigin(process.env.NEXT_PUBLIC_EVEREST_API_BASE_URL),
+};

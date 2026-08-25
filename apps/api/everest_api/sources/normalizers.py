@@ -1,5 +1,12 @@
 """Canonical normalizers for terrain, observations, and satellite sources."""
 
+# pylint: disable=too-many-instance-attributes
+# Canonical source records are schema-shaped frozen dataclasses; the attribute
+# count reflects the required canonical fields, not behavior.
+# pylint: disable=too-many-arguments,too-many-positional-arguments
+# The normalize functions project a fixed provider field set onto canonical
+# records; the argument count is bounded by the recorded schema.
+
 from __future__ import annotations
 
 from dataclasses import dataclass

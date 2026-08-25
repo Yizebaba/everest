@@ -13,6 +13,30 @@ Errors must be `{ "error": { "code": "...", "message": "...",
 "correlation_id": "..." } }`; responses must never expose credentials,
 credential-reference values, tokens, or unbounded failure details.
 
+The API retains a caller-supplied `X-Correlation-ID` only when it is 1--128
+characters from the bounded ASCII set `A-Z`, `a-z`, `0-9`, `.`, `_`, `:`, and
+`-`; otherwise it generates an opaque ID. The selected ID is returned in both
+the response header and every error envelope. Request validation uses code
+`VALIDATION_ERROR` with HTTP 422; unexpected failures use
+`INTERNAL_SERVER_ERROR` with HTTP 500 and never return exception details.
+
+Local browser CORS is configuration-driven by the comma-separated
+`EVEREST_CORS_ALLOWED_ORIGINS` environment value. Its safe development default
+allows exactly `http://localhost:42420` and `http://localhost:52148` (the
+current frontend runtime after ADR-020). Only `GET` and
+preflight `OPTIONS` are allowed, credentials are disabled, request
+`X-Correlation-ID` is allowed, and response `X-Correlation-ID` is exposed. No
+origin wildcard is accepted.
+
+Implementation references consulted for `EV-UI-001-INTEGRATION-FIX-BE`:
+
+- FastAPI, **CORS (Cross-Origin Resource Sharing)**:
+  <https://fastapi.tiangolo.com/tutorial/cors/>
+- FastAPI, **Handling Errors**:
+  <https://fastapi.tiangolo.com/tutorial/handling-errors/>
+- FastAPI, **JSON Compatible Encoder**:
+  <https://fastapi.tiangolo.com/tutorial/encoder/>
+
 ## Runtime raw-storage configuration
 
 Raw retention is configured only in the backend process environment. A runtime

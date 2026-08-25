@@ -5,7 +5,7 @@ export default defineConfig({
     environment: "node",
     include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
     env: {
-      NEXT_PUBLIC_EVEREST_API_BASE_URL: "http://localhost:50149",
+      NEXT_PUBLIC_EVEREST_API_BASE_URL: "http://localhost:52147",
     },
   },
   resolve: {

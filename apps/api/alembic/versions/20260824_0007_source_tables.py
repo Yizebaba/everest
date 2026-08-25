@@ -5,7 +5,7 @@ Revises: 20260821_0006
 Create Date: 2026-08-24 00:00:00 UTC
 """
 
-# pylint: disable=invalid-name,no-member,wrong-import-order,implicit-str-concat
+# pylint: disable=invalid-name,no-member,wrong-import-order,implicit-str-concat,not-callable
 # Alembic requires these revision variable names and operation proxies.
 
 from alembic import op

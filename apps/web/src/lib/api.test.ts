@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { validateRecords, isProfileLabel } from "../api/validate";
+import {
+  isProfileLabel,
+  validateDataHealth,
+  validateProfile,
+  validateRecords,
+  validateSources,
+} from "../api/validate";
 import {
   formatTemperature,
   formatVisibility,
@@ -16,36 +22,67 @@ const VALID_RECORD = {
   spatial_key: "28.0_87.0",
   source: "dwd-icon",
   model: "ICON",
+  forecast_cycle: "2026-08-24T00:00:00Z",
+  forecast_lead_time: 21600,
   quality_flags: ["clean"],
+  wind_speed: 12,
+  wind_direction: 250,
   temperature: -30.2,
+  precipitation: 0,
+  visibility: 22000,
 };
 
 describe("validateRecords", () => {
   it("accepts a valid record", () => {
-    const records = validateRecords({ records: [VALID_RECORD] });
-    expect(records).toHaveLength(1);
-    expect(records[0].source).toBe("dwd-icon");
+    const result = validateRecords({ records: [VALID_RECORD] });
+    expect(result.records).toHaveLength(1);
+    expect(result.records[0].source).toBe("dwd-icon");
+    expect(result.warningCount).toBe(0);
   });
 
-  it("rejects an invalid record_type", () => {
-    expect(() =>
-      validateRecords({ records: [{ ...VALID_RECORD, record_type: "bogus" }] }),
-    ).toThrow("record_type");
+  it("isolates invalid records while returning valid records and warning count", () => {
+    const result = validateRecords({
+      records: [VALID_RECORD, { ...VALID_RECORD, record_type: "bogus" }],
+    });
+    expect(result.records).toHaveLength(1);
+    expect(result.warningCount).toBe(1);
   });
 
-  it("rejects a non-UTC timestamp", () => {
-    expect(() =>
-      validateRecords({
-        records: [{ ...VALID_RECORD, timestamp: "2026-08-24T06:00:00" }],
-      }),
-    ).toThrow("timestamp");
+  it("isolates non-UTC timestamps", () => {
+    const result = validateRecords({
+      records: [{ ...VALID_RECORD, timestamp: "2026-08-24T06:00:00" }],
+    });
+    expect(result).toEqual({ records: [], warningCount: 1 });
   });
 
-  it("ignores unknown fields but requires source", () => {
-    const missingSource = { ...VALID_RECORD, source: undefined };
-    expect(() => validateRecords({ records: [missingSource] })).toThrow(
-      "source",
-    );
+  it("requires nullable core keys and validates ranges", () => {
+    const { visibility: _visibility, ...missingVisibility } = VALID_RECORD;
+    const result = validateRecords({
+      records: [
+        missingVisibility,
+        { ...VALID_RECORD, latitude: 91 },
+        { ...VALID_RECORD, wind_direction: 360 },
+      ],
+    });
+    expect(result.warningCount).toBe(3);
+    expect(result.records).toHaveLength(0);
+    void _visibility;
+  });
+
+  it("accepts required core keys when their values are null", () => {
+    const result = validateRecords({
+      records: [
+        {
+          ...VALID_RECORD,
+          wind_speed: null,
+          wind_direction: null,
+          temperature: null,
+          precipitation: null,
+          visibility: null,
+        },
+      ],
+    });
+    expect(result.warningCount).toBe(0);
   });
 
   it("rejects a missing records array", () => {
@@ -61,6 +98,82 @@ describe("isProfileLabel", () => {
 
   it("rejects unknown labels", () => {
     expect(isProfileLabel("CAMP")).toBe(false);
+  });
+});
+
+describe("profile and source validation", () => {
+  it("validates and normalizes a complete profile response", () => {
+    const result = validateProfile({
+      profile: "summit",
+      records: [{ ...VALID_RECORD, route_profile: "SUMMIT" }],
+    });
+    expect(result.profile).toBe("SUMMIT");
+    expect(result.records).toHaveLength(1);
+    expect(result.warningCount).toBe(0);
+  });
+
+  it("rejects invalid profile labels and mismatched record labels", () => {
+    expect(() =>
+      validateProfile({ profile: "CAMP", records: [VALID_RECORD] }),
+    ).toThrow("profile");
+    expect(() =>
+      validateProfile({
+        profile: "EBC",
+        records: [{ ...VALID_RECORD, route_profile: "SUMMIT" }],
+      }),
+    ).toThrow("mismatch");
+  });
+
+  it("validates lifecycle and health enums with UTC Z timestamps", () => {
+    expect(
+      validateSources({
+        sources: [
+          {
+            source_id: "dwd-icon",
+            status: "verified",
+            health_status: "healthy",
+            last_success_at: "2026-08-24T06:00:00Z",
+          },
+        ],
+      }).sources,
+    ).toHaveLength(1);
+    expect(
+      validateDataHealth({
+        sources: [
+          {
+            source_id: "dwd-icon",
+            health_status: "unknown",
+            last_success_at: null,
+            last_failure_at: null,
+          },
+        ],
+      }).sources,
+    ).toHaveLength(1);
+  });
+
+  it("rejects unknown statuses and non-Z source timestamps", () => {
+    expect(() =>
+      validateSources({
+        sources: [
+          {
+            source_id: "dwd-icon",
+            status: "ready",
+            health_status: "healthy",
+          },
+        ],
+      }),
+    ).toThrow("status");
+    expect(() =>
+      validateDataHealth({
+        sources: [
+          {
+            source_id: "dwd-icon",
+            health_status: "healthy",
+            last_success_at: "2026-08-24T06:00:00+00:00",
+          },
+        ],
+      }),
+    ).toThrow("last_success_at");
   });
 });
 

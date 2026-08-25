@@ -2,8 +2,8 @@
 
 import { useMemo, useState } from "react";
 
-import { getForecast } from "@/api/client";
-import { useApiFetch } from "@/state/useApiFetch";
+import type { ForecastResponse } from "@/api/types";
+import type { FetchState } from "@/state/useApiFetch";
 
 const SOURCE_COLORS: Record<string, string> = {
   "ecmwf-ifs": "#38BDF8",
@@ -13,15 +13,17 @@ const SOURCE_COLORS: Record<string, string> = {
 };
 
 export interface ForecastPanelProps {
+  state: FetchState<ForecastResponse>;
   activeTime?: string | null;
   onActiveTimeChange?: (time: string | null) => void;
 }
 
 export function ForecastPanel({
+  state,
   activeTime,
   onActiveTimeChange,
 }: ForecastPanelProps): React.JSX.Element {
-  const { status, data, error, refetch } = useApiFetch(() => getForecast());
+  const { status, data, error, refetch } = state;
   const [activeSource, setActiveSource] = useState<string>("all");
 
   const records = useMemo(() => data?.records ?? [], [data]);
@@ -47,7 +49,7 @@ export function ForecastPanel({
       ? records
       : records.filter((r) => r.source === activeSource);
 
-  if (status === "loading") {
+  if (status === "idle" || status === "loading") {
     return (
       <section aria-label="Forecast" aria-busy="true">
         Loading…
@@ -57,7 +59,10 @@ export function ForecastPanel({
   if (status === "error") {
     return (
       <section aria-label="Forecast">
-        {error}{" "}
+        {error?.message ?? "Request failed"}{" "}
+        {error && "correlationId" in error && (
+          <span>Correlation ID: {String(error.correlationId)} </span>
+        )}
         <button type="button" onClick={refetch}>
           Retry
         </button>
@@ -68,6 +73,9 @@ export function ForecastPanel({
   return (
     <section aria-label="Forecast" className="forecast">
       <h2>Forecast</h2>
+      {(data?.warningCount ?? 0) > 0 && (
+        <p role="status">{data?.warningCount} invalid record(s) isolated</p>
+      )}
       <div
         className="forecast__filters"
         role="group"
@@ -119,7 +127,7 @@ export function ForecastPanel({
                   .filter((record) => record.timestamp === time)
                   .map((record) => (
                     <span
-                      key={`${record.source}-${record.timestamp}`}
+                      key={`${record.source}-${record.spatial_key}-${record.timestamp}-${record.forecast_cycle}`}
                       style={{
                         color: SOURCE_COLORS[record.source] ?? "#9AA5B8",
                       }}

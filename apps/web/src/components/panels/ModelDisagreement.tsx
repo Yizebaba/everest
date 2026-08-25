@@ -2,9 +2,7 @@
 
 import { useMemo, useState } from "react";
 
-import { getForecast } from "@/api/client";
 import type { CanonicalWeatherRecord } from "@/api/types";
-import { useApiFetch } from "@/state/useApiFetch";
 
 type Variable = "temperature" | "wind_speed" | "visibility";
 
@@ -24,17 +22,24 @@ function valueOf(
   }
 }
 
-export function ModelDisagreement(): React.JSX.Element {
-  const { status, data } = useApiFetch(() => getForecast());
-  const [variable, setVariable] = useState<Variable>("wind_speed");
+export interface ModelDisagreementProps {
+  records: CanonicalWeatherRecord[];
+  loading: boolean;
+  activeTime: string | null;
+}
 
-  const records = useMemo(() => data?.records ?? [], [data]);
+export function ModelDisagreement({
+  records,
+  loading,
+  activeTime,
+}: ModelDisagreementProps): React.JSX.Element {
+  const [variable, setVariable] = useState<Variable>("wind_speed");
 
   const times = useMemo(
     () => [...new Set(records.map((r) => r.timestamp))].sort(),
     [records],
   );
-  const selectedTime = times.length > 0 ? times[0] : null;
+  const selectedTime = activeTime ?? (times.length > 0 ? times[0] : null);
 
   const atTime = records.filter((record) => record.timestamp === selectedTime);
 
@@ -70,10 +75,8 @@ export function ModelDisagreement(): React.JSX.Element {
           </button>
         ))}
       </div>
-      {status === "loading" && <p>…</p>}
-      {status === "success" && selectedTime === null && (
-        <p>No data for this selection</p>
-      )}
+      {loading && <p>…</p>}
+      {!loading && selectedTime === null && <p>No data for this selection</p>}
       {stats && (
         <dl>
           <div>
@@ -101,7 +104,9 @@ export function ModelDisagreement(): React.JSX.Element {
       {selectedTime && atTime.length > 0 && (
         <ul>
           {atTime.map((record) => (
-            <li key={`${record.source}-${record.timestamp}`}>
+            <li
+              key={`${record.source}-${record.spatial_key}-${record.timestamp}-${record.forecast_cycle}`}
+            >
               {record.source}:{" "}
               {valueOf(record, variable) === null
                 ? "–"

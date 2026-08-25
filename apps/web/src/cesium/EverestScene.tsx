@@ -237,9 +237,11 @@ export function EverestScene({
     const layers = viewer.imageryLayers;
     for (let i = layers.length - 1; i >= 0; i -= 1) {
       const layer = layers.get(i);
-      const provider = (layer as unknown as {
-        _provider?: { url?: string };
-      })._provider;
+      const provider = (
+        layer as unknown as {
+          _provider?: { url?: string };
+        }
+      )._provider;
       if (provider?.url?.includes("everest-rgb")) {
         layers.remove(layer);
       }
@@ -340,5 +342,5 @@ export function EverestScene({
 }
 
 function recordKey(record: CanonicalWeatherRecord): string {
-  return `${record.source}-${record.timestamp}-${record.spatial_key}`;
+  return `${record.source}-${record.timestamp}-${record.spatial_key}-${record.forecast_cycle}`;
 }

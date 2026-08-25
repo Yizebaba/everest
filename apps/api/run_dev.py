@@ -16,7 +16,7 @@ from everest_api.app import create_app
 from everest_api.persistence.database import create_session_factory
 
 DEFAULT_URL = "postgresql+psycopg://everest:everest@127.0.0.1:5432/everest_test"
-PORT = int(os.environ.get("EVEREST_API_PORT", "50149"))
+PORT = int(os.environ.get("EVEREST_API_PORT", "52147"))
 
 
 def main() -> None:

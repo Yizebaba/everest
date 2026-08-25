@@ -16,7 +16,7 @@ only.
 
 | Class | Examples | Storage |
 | --- | --- | --- |
-| Non-secret | Ports (`50149`, `56021`, `48237`), API base URL, source metadata, AOI, policy versions | Committed (`compose.yml`, `.env.example`, `docs/*`) |
+| Non-secret | Ports (`52147`, `52148`, `56021`), API base URL, source metadata, AOI, policy versions | Committed (`compose.yml`, `.env.example`, `docs/*`) |
 | Secret | `EVEREST_DB_PASSWORD`, future provider keys/tokens, CA private keys, AWS access keys | Operator env file `~/.everest/db.env` (chmod 600) or process environment; never committed |
 
 ## Implemented controls

@@ -200,10 +200,10 @@ distinct.
 | Role | Allowed S3 actions | Explicit exclusions |
 | --- | --- | --- |
 | Writer (one source prefix each) | `s3:PutObject` only | No retention/legal-hold read or write, bypass, list, read, or delete permissions |
-| Retention administrator | `s3:GetObjectRetention`, `s3:PutObjectRetention`, `s3:GetObjectLegalHold`, `s3:ListBucketVersions`, `s3:GetBucketObjectLockConfiguration`, `s3:GetBucketVersioning` | No bypass, legal-hold mutation, delete, bucket Object Lock mutation, or Lifecycle mutation |
+| Retention broker/executor (uncreated until Governance QA activation) | `s3:GetObjectRetention`, `s3:PutObjectRetention`, `s3:GetObjectLegalHold`, `s3:ListBucketVersions`, `s3:GetBucketObjectLockConfiguration`, `s3:GetBucketVersioning`; `PutObjectRetention` is conditioned to Governance and invoked only for the approved calculated date | No direct human assumption/call, arbitrary date, Compliance mode in Governance QA, bypass, shortening/removal, legal-hold mutation, delete, bucket Object Lock mutation, or Lifecycle mutation |
 | Hold executor | `s3:GetObjectLegalHold`, `s3:PutObjectLegalHold`, `s3:GetObjectRetention`, `s3:ListBucketVersions` | No retention change, bypass, delete, or bucket mutation |
 | Disposition executor | `s3:ListBucketVersions`, `s3:GetObjectRetention`, `s3:GetObjectLegalHold`, `s3:DeleteObjectVersion` | No unversioned `s3:DeleteObject`, retention/hold mutation, bypass, bucket/Lifecycle mutation, or KMS administration |
-| Audit read-only | `s3:GetBucketObjectLockConfiguration`, `s3:GetBucketVersioning`, `s3:GetLifecycleConfiguration`, `s3:GetInventoryConfiguration`, `s3:ListBucketVersions`, `s3:GetObjectRetention`, `s3:GetObjectLegalHold`, `s3:GetObjectAttributes` | No payload read or mutation |
+| Audit read-only | `s3:GetBucketObjectLockConfiguration`, `s3:GetBucketVersioning`, `s3:GetLifecycleConfiguration`, `s3:GetInventoryConfiguration`, `s3:ListBucketVersions`, `s3:GetObjectRetention`, `s3:GetObjectLegalHold` | No payload read or mutation; `s3:GetObjectAttributes` is intentionally excluded because it requires object-read authorization and is not metadata-only for this boundary |
 
 `s3:PutObjectLegalHold` controls both hold placement and release, so IAM cannot
 separate `ON` from `OFF`. A brokered hold executor must require an authenticated
@@ -230,9 +230,10 @@ block disposition until reconciliation succeeds.
 
 An additive backend migration should create an immutable
 `raw_artifact_storage_version` mapping with `artifact_id`, provider, bucket,
-object key, non-null version ID, ETag/checksum, KMS key ARN, observed retention
-mode/date, legal-hold status, storage state, first/last verification times, and
-policy version. `(bucket_name, object_key, version_id)` is unique. Legacy/local
+object key, non-null version ID, immutable `version_created_at` and
+`s3_last_modified`, ETag/checksum, KMS key ARN, observed retention mode/date,
+legal-hold status, storage state, first/last verification times, and policy
+version. `(bucket_name, object_key, version_id)` is unique. Legacy/local
 rows become `storage_unclassified`; migration must not invent S3 identities or
 retention facts. Append-only events cover version/default-lock verification,
 extension request/result, hold request/result, drift, disposition approval,
@@ -325,11 +326,11 @@ not consume or waive any still-open B1 residual.
 
 ### EV-GATEC-OP-RETENTION-002-OFFLINE foundation
 
-**Status (2026-08-24):** Offline B2 policy/resource contracts implemented under
-the later Manager implementation authorization. No AWS, PostgreSQL, service,
-raw/`tmp-*`, credential, private-key, Git, Docker, or canary operation was
-performed. Governance provisioning is the next separate task; B3 remains
-closed.
+**Status (2026-08-25):** B2 offline review remediation is complete and
+independent review is pending. This remediation made no AWS, PostgreSQL,
+service, raw/`tmp-*`, credential, private-key, Git, Docker, provisioning, QA
+canary, or B3 operation. Historical provisioning records remain separate facts
+and are not revalidated by this offline work.
 
 The inert contracts, validator, tests, human runbook, rollback warnings, and
 sanitized evidence checklist are under
@@ -337,7 +338,25 @@ sanitized evidence checklist are under
 Compliance audit buckets/defaults, keep the one-object production Compliance
 canary disabled until Governance QA PASS, deny Governance bypass/unversioned
 delete/Lifecycle mutation, preserve KMS survivability, require exact non-null S3
-version IDs, and leave legal hold and disposition without usable authority.
+version IDs, and require legal authority, hold executor, and disposition
+executor roles to remain absent. Retention broker/admin remain uncreated until
+the exact Governance QA activation transition. Audit metadata uses valid
+`ListBucketVersions`, `GetObjectRetention`, and `GetObjectLegalHold` actions;
+the invalid metadata-only `s3:GetObjectAttributes` grant is removed.
+
+The validator now rejects unknown/missing fields; checks all four exact BPA
+keys, `BucketOwnerEnforced`, exact KMS ARN/resources/principals/effects/actions,
+a closed S3 action allowlist, and the exact bucket-lock deny; mutation tests
+cover each boundary. KMS survival denies are attached only to the seven named
+ordinary B2/B1 roles. The named MFA administrator/recovery boundary remains
+`arn:aws:iam::982408502231:role/everest/admin/everest-gatec-administrator` and
+is excluded from ordinary-role policy attachment.
+
+Governance provisioning order is create Object-Lock bucket, configure ownership/
+BPA/SSE-KMS, set Governance 180, read back, and only then attach the lock-
+mutation deny; Lifecycle remains absent. Governance QA retention mutation must
+flow through a broker to a non-human executor restricted to Governance and the
+approved calculated date. Direct arbitrary or Compliance retention is rejected.
 
 The additive PostgreSQL projection and application state-machine implementation
 contracts are normative at
@@ -1021,8 +1040,10 @@ Resolves OQ-04.
   `GET` and `OPTIONS` only, no credentials — injected via backend environment
   (non-secret). Architecture resolves the **pattern**; the concrete origin pair
   is fixed by backend + release before M6: the frontend is served from
-  `http://localhost:48237` and the API from `http://localhost:50149` (random,
-  non-standard, unallocated, documented — AGENTS.md port rule). The production
+  `http://localhost:52148` and the API from `http://localhost:52147` (random,
+  non-standard, unallocated, documented — AGENTS.md port rule; re-homed from the
+  previous `50151`/`50149` pair because Windows excluded range `50060-50159`
+  blocked binds in WSL mirrored networking, see ADR-020). The production
   origin is deferred until Gate C-Operational and release are authorized.
 - **Environment:** the API base URL is injected at build time as
   `NEXT_PUBLIC_EVEREST_API_BASE_URL` (non-secret, read by `src/config/env.ts`).

@@ -6,6 +6,10 @@ Reuses the checked-in connectors, parser, normalizer, and
 WeatherIngestionService. Does not modify project source.
 """
 
+# pylint: disable=wrong-import-position,wrong-import-order,import-outside-toplevel
+# sys.path insertion before local imports is required for this standalone
+# scheduler script; lazy imports keep the hot path light.
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
@@ -28,6 +32,10 @@ from services.weather.ecmwf import (  # noqa: E402
     normalize_messages as normalize_ifs,
     parse_grib_bytes,
 )
+from services.weather.ecmwf.pressure import (  # noqa: E402
+    normalize_pressure_levels,
+    parse_pressure_messages,
+)
 from weather_ingestion_contract import (  # noqa: E402
     CanonicalRecordInput,
     RawArtifactDescriptor,
@@ -37,6 +45,7 @@ LAT = 27.98806
 LON = 86.92528
 RAW_ROOT = Path("/tmp/everest-schedule-raw")
 LEADS_IFS = list(range(0, 73, 3))  # 3h steps
+PRESSURE_LEVELS = ("850", "700", "500", "300")
 
 
 def _env_db_url() -> str:
@@ -116,7 +125,92 @@ def _ingest_ifs(service, cycle: datetime) -> int:
             precipitation=record.precipitation,
             visibility=record.visibility,
             forecast_cycle=record.forecast.cycle,
-            forecast_lead_seconds=int(record.forecast.lead_time.total_seconds()),
+            forecast_lead_seconds=int(
+                record.forecast.lead_time.total_seconds()
+            ),
+        )
+        service.ingest(descriptor, (canonical,))
+        count += 1
+    return count
+
+
+def _fetch_pressure(cycle: datetime) -> bytes:
+    """Download the IFS pressure-level GRIB messages for one cycle."""
+    import json
+    import urllib.request
+
+    stamp = cycle.strftime("%Y%m%d")
+    # lead-0 file naming: YYYYMMDDHH0000-0h-oper-fc
+    base = (
+        f"https://data.ecmwf.int/forecasts/{stamp}/{cycle:%H}z/ifs/0p25/oper/"
+        f"{stamp}{cycle:%H}0000-0h-oper-fc"
+    )
+    with urllib.request.urlopen(base + ".index") as resp:
+        rows = [json.loads(l) for l in resp.read().decode().splitlines() if l]
+    sel = [
+        r
+        for r in rows
+        if r.get("levtype") == "pl"
+        and r.get("param") in ("u", "v", "t", "gh")
+        and r.get("levelist") in PRESSURE_LEVELS
+    ]
+    sel.sort(key=lambda r: r["_offset"])
+    buf = bytearray()
+    for r in sel:
+        end = r["_offset"] + r["_length"] - 1
+        req = urllib.request.Request(
+            base + ".grib2", headers={"Range": f"bytes={r['_offset']}-{end}"}
+        )
+        with urllib.request.urlopen(req) as resp:
+            body = resp.read()
+            if len(body) != r["_length"]:
+                raise RuntimeError("pressure range length mismatch")
+            buf.extend(body)
+    return bytes(buf)
+
+
+def _ingest_ifs_pressure(service, cycle: datetime) -> int:
+    import hashlib
+
+    payload = _fetch_pressure(cycle)
+    messages = parse_pressure_messages(payload)
+    records = normalize_pressure_levels(messages, LAT, LON, PRESSURE_LEVELS)
+    digest = hashlib.sha256(payload).hexdigest()
+    artifact_path = RAW_ROOT / "ecmwf-ifs" / digest / "pressure.grib2"
+    artifact_path.parent.mkdir(parents=True, exist_ok=True)
+    artifact_path.write_bytes(payload)
+    descriptor = RawArtifactDescriptor(
+        "ecmwf-ifs",
+        "ifs-pressure",
+        str(artifact_path),
+        digest,
+        cycle,
+        "GRIB2",
+        len(payload),
+        forecast_cycle=cycle,
+        forecast_lead_seconds=0,
+        metadata={
+            "provider_payload_sha256": digest,
+            "provider_payload_size_bytes": len(payload),
+        },
+    )
+    count = 0
+    for record in records:
+        canonical = CanonicalRecordInput(
+            "forecast",
+            record.timestamp,
+            LAT,
+            LON,
+            record.altitude,
+            f"ifs:0p25:28.0:87.0:{record.level_hpa}hpa",
+            record.source,
+            record.model,
+            ("clean",),
+            wind_speed=record.wind_speed,
+            wind_direction=record.wind_direction,
+            temperature=record.temperature_c,
+            forecast_cycle=record.cycle,
+            forecast_lead_seconds=record.lead_seconds,
         )
         service.ingest(descriptor, (canonical,))
         count += 1
@@ -124,6 +218,7 @@ def _ingest_ifs(service, cycle: datetime) -> int:
 
 
 def main() -> None:
+    """Run one full scheduler pass: surface + pressure ingestion for the latest cycle."""
     import shutil
 
     shutil.rmtree(RAW_ROOT, ignore_errors=True)
@@ -142,10 +237,15 @@ def main() -> None:
         try:
             print(f"ingesting IFS cycle {cycle.isoformat()}")
             count = _ingest_ifs(service, cycle)
-            print(f"ingested {count} leads")
+            print(f"ingested {count} surface leads")
+            pcount = _ingest_ifs_pressure(service, cycle)
+            print(f"ingested {pcount} pressure levels")
             return
-        except Exception as exc:  # noqa: BLE001 - provider may not have published yet
-            print(f"cycle {cycle.isoformat()} unavailable ({exc}); trying previous")
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            # provider latency: retry previous cycles until one publishes
+            print(
+                f"cycle {cycle.isoformat()} unavailable ({exc}); trying previous"
+            )
             cycle = cycle - timedelta(hours=6)
     print("no recent cycle available; skipping this run")
 

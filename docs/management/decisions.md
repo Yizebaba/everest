@@ -2833,3 +2833,36 @@ full `verified` lifecycle is not claimed in this record. Everest AWS remains
 display/research-only (commercial NOT authorized). OSM, Risk, additional
 satellite/terrain, and Cesium 3D Tiles/PostGIS rendering remain separately
 authorized future scope.
+
+## ADR-020: Re-home runtime ports 50149/50151 to 52147/52148
+
+**Assignment:** EV-UI-001-INTEGRATION-RETRY  
+**Review date:** 2026-08-25  
+**Status:** Accepted by Everest Manager  
+**Root cause:** WSL2 runs in mirrored networking mode
+(`~/.wslconfig` `networkingMode=mirrored`). The Windows host's TCP excluded
+port ranges now include `50060-50159` (confirmed via
+`netsh interface ipv4 show excludedportrange protocol=tcp`), which covers the
+documented API port `50149` and the frontend port `50151`. In mirrored mode the
+WSL bind is rejected (`Errno 98 address already in use`) even though no listener
+exists in the WSL namespace; the earlier `EV-UI-001-INTEGRATION` record (ports
+`50151`/`50149`, HTTP 200) predates this exclusion and is no longer bindable in
+the current environment.
+
+**Decision:** re-home the API to **`52147`** and the frontend to **`52148`**.
+Both are non-standard, unallocated, and bindable in the WSL pid1 namespace
+(verified by socket bind probe), and neither lies in any Windows excluded range
+(`49750-49949`, `50000-50359`, `50896-50995`, `54302-54401`). PostgreSQL
+remains on `56021`.
+
+**Files updated:** `apps/api/run_dev.py`, `apps/api/monitor_service.py`,
+`apps/api/everest_api/app.py` (CORS default origins), `infra/docker/systemd/everest-api.service`,
+`apps/web/package.json`, `apps/web/.env.example`, `apps/web/vitest.config.ts`,
+`apps/web/next.config.mjs`, `apps/web/start-dev.cmd`,
+`docs/architecture/architecture.md`, `docs/architecture/EV-GATEC-OP-SECRETS-007.md`,
+and this record.
+
+**Rollback:** restore `50149`/`50151` only after the Windows excluded range no
+longer covers them or mirrored networking is replaced with NAT mode; the ports
+must first pass a bind probe in the WSL pid1 namespace. No raw-artifact or
+database operation is affected by this decision.

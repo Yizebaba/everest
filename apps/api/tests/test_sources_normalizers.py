@@ -14,6 +14,7 @@ _UTC = timezone.utc
 
 
 def test_normalize_terrain_tile() -> None:
+    """Normalize a GLO-30 terrain tile descriptor into canonical form."""
     record = normalize_terrain_tile(
         tile_name="Copernicus_DSM_COG_10_N27_00_E086_00_DEM",
         crs="EPSG:4326",
@@ -35,6 +36,7 @@ def test_normalize_terrain_tile() -> None:
 
 
 def test_normalize_aws_observation() -> None:
+    """Normalize an Everest AWS station observation into canonical form."""
     record = normalize_aws_observation(
         timestamp=datetime(2025, 10, 23, 6, 15, tzinfo=_UTC),
         station="Base Camp",
@@ -52,6 +54,7 @@ def test_normalize_aws_observation() -> None:
 
 
 def test_normalize_satellite_segment() -> None:
+    """Normalize a Himawari satellite segment into canonical form."""
     record = normalize_satellite_segment(
         timestamp=datetime(2026, 8, 24, 13, 50, tzinfo=_UTC),
         band=3,

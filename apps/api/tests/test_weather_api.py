@@ -1,6 +1,7 @@
 """Minimal REST adapter tests that do not contact external weather providers."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
+from types import SimpleNamespace
 from uuid import UUID
 
 import pytest
@@ -97,6 +98,50 @@ class _FakeSession:  # pylint: disable=too-few-public-methods
         """Match the SQLAlchemy session lifecycle used by the dependency."""
 
 
+class _FailingSession(_FakeSession):
+    """Session stand-in that proves unexpected errors stay private."""
+
+    def scalars(self, _statement: object) -> list[WeatherRecordModel]:
+        """Raise a detail that must not cross the API boundary."""
+        raise RuntimeError("private database password=do-not-leak")
+
+
+class _Rows:
+    """Small SQLAlchemy result shape for public serialization tests."""
+
+    def __init__(self, rows: list[object]) -> None:
+        self._rows = rows
+
+    def all(self) -> list[object]:
+        """Return all configured rows."""
+        return self._rows
+
+    def first(self) -> object | None:
+        """Return the first configured row when present."""
+        return self._rows[0] if self._rows else None
+
+    def scalars(self) -> "_Rows":
+        """Match an execute result's scalar projection."""
+        return self
+
+
+class _PublicDateTimeSession(_FakeSession):
+    """Return endpoint-specific rows carrying a positive UTC offset."""
+
+    timestamp = datetime(2026, 8, 21, 8, tzinfo=timezone(timedelta(hours=8)))
+
+    def __init__(self, row: object) -> None:
+        self._row = row
+
+    def scalars(self, _statement: object) -> _Rows:
+        """Return one row for registry, terrain, or satellite queries."""
+        return _Rows([self._row])
+
+    def execute(self, _statement: object) -> _Rows:
+        """Return one row for the observation query."""
+        return _Rows([self._row])
+
+
 @pytest.mark.parametrize(
     "path",
     [
@@ -168,4 +213,184 @@ def test_forecast_retains_start_end_order_validation() -> None:
     )
 
     assert response.status_code == 422
-    assert response.json()["detail"] == "start must not exceed end"
+    assert response.json()["error"]["message"] == "start must not exceed end"
+
+
+def test_cors_allows_approved_origin_and_rejects_other_origin() -> None:
+    """CORS permits only configured browser origins and minimal capabilities."""
+    client = TestClient(
+        create_app(_FakeSession, cors_origins=["http://localhost:42420"])
+    )
+    headers = {
+        "Origin": "http://localhost:42420",
+        "Access-Control-Request-Method": "GET",
+        "Access-Control-Request-Headers": "X-Correlation-ID",
+    }
+    allowed = client.options("/api/weather/current", headers=headers)
+    denied = client.options(
+        "/api/weather/current",
+        headers={**headers, "Origin": "http://localhost:9999"},
+    )
+    simple = client.get(
+        "/api/weather/current",
+        headers={
+            "Origin": headers["Origin"],
+            "X-Correlation-ID": "cors-request",
+        },
+    )
+
+    assert allowed.status_code == 200
+    assert allowed.headers["access-control-allow-origin"] == headers["Origin"]
+    assert "GET" in allowed.headers["access-control-allow-methods"]
+    assert (
+        "x-correlation-id"
+        in allowed.headers["access-control-allow-headers"].lower()
+    )
+    assert "access-control-allow-credentials" not in allowed.headers
+    assert "access-control-allow-origin" not in denied.headers
+    assert simple.headers["access-control-expose-headers"] == (
+        "X-Correlation-ID"
+    )
+    assert simple.headers["X-Correlation-ID"] == "cors-request"
+
+
+def test_public_datetimes_convert_positive_offset_to_utc_z() -> None:
+    """Weather serialization normalizes aware database values to UTC Z."""
+    record = _weather_record()
+    record.timestamp = datetime(
+        2026, 8, 21, 8, tzinfo=timezone(timedelta(hours=8))
+    )
+    record.forecast_cycle = record.timestamp
+
+    class OffsetSession(_FakeSession):
+        """Return the positive-offset record."""
+
+        def scalars(self, _statement: object) -> list[WeatherRecordModel]:
+            return [record]
+
+    body = (
+        TestClient(create_app(OffsetSession))
+        .get("/api/weather/current")
+        .json()["records"][0]
+    )
+    assert body["timestamp"] == "2026-08-21T00:00:00Z"
+    assert body["forecast_cycle"] == "2026-08-21T00:00:00Z"
+
+
+def test_other_public_datetime_endpoints_convert_positive_offset_to_utc_z() -> (
+    None
+):
+    """Sources, health, and all three extension routes emit UTC Z."""
+    timestamp = _PublicDateTimeSession.timestamp
+    registry = SimpleNamespace(
+        source_id="source",
+        status="connected",
+        health_status="unknown",
+        last_success_at=timestamp,
+        last_failure_at=timestamp,
+    )
+    terrain = SimpleNamespace(
+        tile_name="tile",
+        crs="EPSG:4326",
+        west=86.0,
+        south=27.0,
+        east=87.0,
+        north=28.0,
+        resolution_degrees=0.1,
+        min_elevation=1.0,
+        max_elevation=2.0,
+        retrieved_at=timestamp,
+    )
+    observation = SimpleNamespace(
+        timestamp=timestamp,
+        station="Base Camp",
+        temperature_c=1.0,
+        relative_humidity=2.0,
+        precipitation=0.0,
+        weather_code=None,
+        missing=False,
+        quality_flags=[],
+    )
+    satellite = SimpleNamespace(
+        timestamp=timestamp,
+        band=3,
+        segment=1,
+        satellite_name="Himawari-9",
+        observation_area="FLDK",
+        size_bytes=1,
+    )
+
+    source_client = TestClient(
+        create_app(lambda: _PublicDateTimeSession(registry))
+    )
+    assert (
+        source_client.get("/api/weather/sources").json()["sources"][0][
+            "last_success_at"
+        ]
+        == "2026-08-21T00:00:00Z"
+    )
+    health = source_client.get("/api/data-health").json()["sources"][0]
+    assert health["last_success_at"] == "2026-08-21T00:00:00Z"
+    assert health["last_failure_at"] == "2026-08-21T00:00:00Z"
+
+    terrain_client = TestClient(
+        create_app(lambda: _PublicDateTimeSession(terrain))
+    )
+    terrain_body = terrain_client.get(
+        "/api/terrain/tile?latitude=27.5&longitude=86.5"
+    ).json()
+    assert terrain_body["tile"]["retrieved_at"] == "2026-08-21T00:00:00Z"
+
+    observation_client = TestClient(
+        create_app(lambda: _PublicDateTimeSession(observation))
+    )
+    observation_body = observation_client.get(
+        "/api/observations/current"
+    ).json()
+    assert (
+        observation_body["observations"]["Base Camp"]["timestamp"]
+        == "2026-08-21T00:00:00Z"
+    )
+
+    satellite_client = TestClient(
+        create_app(lambda: _PublicDateTimeSession(satellite))
+    )
+    satellite_body = satellite_client.get(
+        "/api/satellite/segments?band=3"
+    ).json()
+    assert satellite_body["segments"][0]["timestamp"] == (
+        "2026-08-21T00:00:00Z"
+    )
+
+
+def test_validation_error_uses_envelope_and_safe_correlation_header() -> None:
+    """422 responses echo safe IDs in both the body and response header."""
+    response = TestClient(create_app(_FakeSession)).get(
+        "/api/weather/forecast?start=not-a-datetime",
+        headers={"X-Correlation-ID": "ui-request-42"},
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "error": {
+            "code": "VALIDATION_ERROR",
+            "message": "Request validation failed",
+            "correlation_id": "ui-request-42",
+        }
+    }
+    assert response.headers["X-Correlation-ID"] == "ui-request-42"
+
+
+def test_unhandled_error_uses_safe_envelope_without_exception_detail() -> None:
+    """500 responses include an ID but do not expose internal exception text."""
+    client = TestClient(
+        create_app(_FailingSession), raise_server_exceptions=False
+    )
+    response = client.get("/api/weather/current")
+
+    assert response.status_code == 500
+    error = response.json()["error"]
+    assert error["code"] == "INTERNAL_SERVER_ERROR"
+    assert error["message"] == "Internal server error"
+    assert error["correlation_id"] == response.headers["X-Correlation-ID"]
+    assert "password" not in response.text

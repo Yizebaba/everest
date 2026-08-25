@@ -2,11 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { getForecast } from "@/api/client";
-import { useApiFetch } from "@/state/useApiFetch";
+import type { CanonicalWeatherRecord } from "@/api/types";
 
 export interface TimeNavProps {
   activeTime: string | null;
+  records: CanonicalWeatherRecord[];
   onActiveTimeChange: (time: string | null) => void;
 }
 
@@ -14,15 +14,13 @@ const STEP_MS = 750;
 
 export function TimeNav({
   activeTime,
+  records,
   onActiveTimeChange,
 }: TimeNavProps): React.JSX.Element {
-  const { data } = useApiFetch(() => getForecast());
   const [playing, setPlaying] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const times = [
-    ...new Set((data?.records ?? []).map((record) => record.timestamp)),
-  ].sort();
+  const times = [...new Set(records.map((record) => record.timestamp))].sort();
 
   const currentIndex = activeTime === null ? -1 : times.indexOf(activeTime);
 

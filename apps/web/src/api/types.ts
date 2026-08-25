@@ -9,15 +9,15 @@ export interface CanonicalWeatherRecord {
   spatial_key: string;
   source: string;
   model: string | null;
-  forecast_cycle?: string | null;
-  forecast_lead_time?: number | null;
+  forecast_cycle: string | null;
+  forecast_lead_time: number | null;
   route_profile?: string | null;
   quality_flags: string[];
-  wind_speed?: number | null;
-  wind_direction?: number | null;
-  temperature?: number | null;
-  precipitation?: number | null;
-  visibility?: number | null;
+  wind_speed: number | null;
+  wind_direction: number | null;
+  temperature: number | null;
+  precipitation: number | null;
+  visibility: number | null;
   pressure?: number | null;
   relative_humidity?: number | null;
   dew_point?: number | null;
@@ -28,31 +28,50 @@ export interface CanonicalWeatherRecord {
   gust_speed?: number | null;
 }
 
-export interface CurrentResponse {
+export interface ValidatedRecordsResponse {
   records: CanonicalWeatherRecord[];
+  warningCount: number;
 }
 
-export interface ForecastResponse {
-  records: CanonicalWeatherRecord[];
-}
+export type CurrentResponse = ValidatedRecordsResponse;
+
+export type ForecastResponse = ValidatedRecordsResponse;
 
 export type ProfileLabel = "EBC" | "C1" | "C2" | "C3" | "C4" | "SUMMIT";
 
 export interface ProfileResponse {
   profile: string;
   records: CanonicalWeatherRecord[];
+  warningCount: number;
 }
+
+export type SourceLifecycleStatus =
+  "planned" | "configured" | "connected" | "verified" | "degraded" | "disabled";
+
+export type SourceHealthStatus =
+  "unknown" | "healthy" | "stale" | "failed" | "degraded" | "disabled";
 
 export interface SourceFact {
   source_id: string;
-  status: string;
-  health_status: string;
+  status: SourceLifecycleStatus;
+  health_status: SourceHealthStatus;
   last_success_at?: string | null;
   last_failure_at?: string | null;
 }
 
 export interface SourcesResponse {
   sources: SourceFact[];
+}
+
+export interface HealthFact {
+  source_id: string;
+  health_status: SourceHealthStatus;
+  last_success_at?: string | null;
+  last_failure_at?: string | null;
+}
+
+export interface DataHealthResponse {
+  sources: HealthFact[];
 }
 
 export interface TerrainTileResponse {

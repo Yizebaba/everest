@@ -372,9 +372,7 @@ class WeatherStorageVersionModel(
     )
 
 
-class WeatherStorageEventModel(
-    Base
-):  # pylint: disable=too-few-public-methods
+class WeatherStorageEventModel(Base):  # pylint: disable=too-few-public-methods
     """Append-only, bounded exact-version storage lifecycle event (B2 DB-04)."""
 
     __tablename__ = "raw_artifact_storage_event"
@@ -401,9 +399,7 @@ class WeatherStorageEventModel(
         server_default=func.now(),
     )
     # pylint: enable=not-callable
-    details: Mapped[str | None] = mapped_column(
-        String(1024), nullable=True
-    )
+    details: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     policy_version: Mapped[str] = mapped_column(String(32), nullable=False)
     s3_request_id: Mapped[str | None] = mapped_column(
         String(255), nullable=True
