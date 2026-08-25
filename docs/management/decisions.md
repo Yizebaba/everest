@@ -2987,3 +2987,32 @@ This completes the legacy `tmp-*` disposition under `GATEC-CLOSE-003`'s
 disposition arm. The authoritative raw-root retention, B1 ACL/IAM, B2
 legal/WORM, and release controls remain governed by their own records; no
 production deployment or release is authorized.
+
+## EV-GATEC-OP-RELEASE-010-STATUS: release decision update after Gate C progression
+
+**Date:** 2026-08-25  
+**Status:** Local WSL/Docker release decision remains in force; no public or
+shared deployment.
+
+Gate C-Operational progression recorded this session:
+
+- `EV-GATEC-OP-TMP-004` COMPLETE: legacy `tmp-gfs*`/`tmp-icon*` artifacts
+  relocated out of the workspace into `D:\Everest-dataaw\legacy-tmp-004\`.
+- `EV-GATEC-OP-GIT-003` independent QA ACCEPTED: authoritative checkout clean
+  of raw payloads and secrets (47 commits, 247 tracked files).
+- `EV-GATEC-OP-ACL-001` PARTIAL: bucket BPA, versioning, object lock,
+  ownership, SSE-KMS, Bucket Key, KMS customer-managed, and operator
+  least-privilege verified PASS by live read-only re-verification. Trust
+  anchor ARN/provenance, writer/verifier/audit roles and disabled profiles,
+  Access Analyzer findings, and nonproduction authorization QA remain
+  admin-required and OPEN.
+- `EV-GATEC-OP-RETENTION-002` Stage 1-3 nonproduction evidence QA PASS;
+  production Compliance canary remains disabled pending a named legal/records
+  authority, an explicit canary object/cost approval, and an identity with S3
+  write + retention permission (the operator is read-only by design).
+
+The local-only release decision (ADR-018 WSL/Docker, API `127.0.0.1:52147`,
+frontend `127.0.0.1:52148`, PostgreSQL `127.0.0.1:56021`) is unchanged and is
+the only approved runtime. Shared or production deployment, writer-profile
+enablement, the production canary, and legal hold / disposition all remain
+unauthorized pending the respective separate gates.
