@@ -3061,3 +3061,56 @@ Block-1 acceptance blockers.
 **Remaining Gate C-Operational gating:** B2 production Compliance canary
 (Stage 4, requires Manager gate + cost approval), writer-profile enablement,
 and shared/production deployment remain separate and unauthorized.
+
+## EV-GATEC-OP-RETENTION-002-CANARY-AUTH: Stage-4 production canary authorization
+
+**Decision date:** 2026-08-25  
+**Decision authority:** Everest Manager  
+**Status:** AUTHORIZED with mandatory broker-activation procedure; execution
+requires a human MFA administrator session
+
+The Everest Manager authorizes the B2 Stage-4 production Compliance canary.
+All prerequisites are met:
+
+- Independent Governance QA (Stage 1-3) **PASS** (2026-08-25).
+- Approved contract: bucket `zhufengxiangmu`, exactly one synthetic object
+  <= 1 KiB, exact version, `COMPLIANCE` retention 180 days.
+- The canary is knowingly irreversible until expiry and incurs storage cost;
+  this is accepted by the Manager.
+
+### Mandatory activation procedure (from `RUNBOOK.md` Stage 2 transition)
+
+Retention mutation is **never** a direct human `PutObjectRetention` call.
+The approved exact transition is:
+
+1. Create `everest-retention-broker` with the approved service/executor trust.
+2. Create `everest-retention-admin` trusting **only** that broker.
+3. Attach the exact Governance-only policy to the admin.
+4. Prove no human can assume the admin.
+5. Enable only the broker command that calculates
+   `max(version_created_at + duration, acquired_at + duration)`.
+6. Negatively prove arbitrary dates and `COMPLIANCE` mode are rejected.
+7. Failure rolls back by deleting the unattached roles/policies before any
+   protected test object exists.
+
+### Evidence to return (sanitized)
+
+- Assumed-role ARN, account `982408502231`, Region `ap-south-1`, approval
+  reference, UTC start/end. Never the MFA code, session token, or keys.
+- Broker/admin role creation readback; no-human-assume proof; broker-only
+  command enablement; negative-test results.
+- Canary object: exact bucket/key/version, size <= 1024 B, `COMPLIANCE`
+  retain-until = version_created_at + 180 days readback.
+
+### Boundary
+
+Only one canary object is created; no replacement or second canary. Legal
+hold and disposition remain prohibited. This authorization does not enable
+writer profiles, does not open Block 3, and does not authorize shared or
+production deployment or release.
+
+### Execution owner
+
+This step requires a human AWS administrator session with MFA. Per the
+recorded MFA-security decision, the MFA one-time code is entered only by the
+human at the local AWS CLI prompt; no Agent may receive or process it.
