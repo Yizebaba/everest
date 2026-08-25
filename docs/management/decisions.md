@@ -2898,3 +2898,92 @@ Independent verification performed (read-only, no raw-artifact operation):
 separately blocked pending Everest Manager authorization and is not operated on
 here. Block 1 ACL/IAM and Block 2 legal/WORM controls remain open; no
 production deployment or release is authorized.
+
+## EV-GATEC-OP-ACL-001-REVERIFY: live B1 read-only re-verification
+
+**Review date:** 2026-08-25  
+**Status:** PARTIAL — bucket/operator controls PASS; admin-required items remain
+
+Read-only verification executed with the Windows AWS CLI (2.36.29) as
+`arn:aws:iam::982408502231:user/everest-gatec-operator` (least-privilege
+operator identity; no write, IAM, rolesanywhere, or access-analyzer
+permission). No AWS mutation was made.
+
+### Verified PASS
+
+| Control | Result |
+| --- | --- |
+| Bucket BPA (bucket-level) | **PASS** — `BlockPublicAcls`, `IgnorePublicAcls`, `BlockPublicPolicy`, `RestrictPublicBuckets` all `true` (previously `false`; admin remediation confirmed) |
+| Bucket Region | **PASS** — `ap-south-1` |
+| Versioning | **PASS** — `Enabled`, MFA Delete `Disabled` (recorded, not a Block-1 failure) |
+| Object Lock capability | **PASS** — `Enabled` |
+| Object Ownership | **PASS** — `BucketOwnerEnforced` |
+| Default encryption | **PASS** — SSE-KMS with exact key `arn:aws:kms:ap-south-1:982408502231:key/3ea2b50b-fab0-4b50-b1e0-7a0f464396b0`, `BucketKeyEnabled=true` |
+| KMS key metadata | **PASS** — `KeyManager=CUSTOMER`, `KeySpec=SYMMETRIC_DEFAULT`, `KeyUsage=ENCRYPT_DECRYPT`, `KeyState=Enabled`, `MultiRegion=false`, account/Region match |
+| Operator least privilege | **PASS (observed)** — operator can no longer read its own IAM policies, bucket policy/tagging, trust anchors, or analyzers; only the six exact bucket-configuration reads and `kms:DescribeKey` succeed, matching the documented `operator-configuration-read-only` surface. The prior `AdministratorAccess` is no longer evidenced. |
+
+### Remaining admin-required items (not verifiable by the operator)
+
+1. Trust anchor: `rolesanywhere:GetTrustAnchor` denied to the operator; the
+   approved `ap-south-1` trust anchor ARN and organization-CA provenance
+   remain to be supplied/accepted by the PKI/AWS administrator.
+2. Writer/verifier/audit roles and disabled 900-second profiles: IAM reads
+   denied to the operator; creation and exact ARN evidence remain admin work.
+3. Access Analyzer `EverestGateC` (accepted regional AC-type analyzer per the
+   account-owner override): analyzer reads denied to the operator; final
+   findings review remains.
+4. Nonproduction positive/negative authorization QA: requires separate
+   approval and a test identity; not executed.
+5. Temporary operator read policy removal evidence: removal proof is a
+   documented future administrator action once the read window closes.
+
+### Boundary
+
+Block 1 remains OPEN (partial PASS). No write, profile, role, trust-anchor,
+analyzer, or release action is authorized. Block 2 remains closed for
+production. This record does not close `GATEC-CLOSE-001`.
+
+## EV-GATEC-OP-TMP-004: legacy project-root raw-artifact disposition
+
+**Executed:** 2026-08-25 (Everest Manager authorization)  
+**Status:** COMPLETE — non-destructive relocation out of the Git working tree
+
+### Authorization
+
+The Everest Manager authorized `EV-GATEC-OP-TMP-004`. All legacy project-root
+`tmp-gfs*` / `tmp-icon*` raw artifacts were relocated out of the Git working
+tree into the approved external raw root. No artifact was deleted, hashed-only
+for evidence, or otherwise operated on outside this disposition.
+
+### Inventory (11 files, 34,466,828 bytes)
+
+| Legacy dir | Contents |
+| --- | --- |
+| `tmp-gfs-real` | GFS payload `9826ecbc...` (2,937,483 B) + `metadata.json` (762 B) |
+| `tmp-gfs-refresh-20260821` | GFS payload `9826ecbc...` (2,937,483 B) + `metadata.json` (751 B) + `metadata.json.sha256` (65 B) |
+| `tmp-icon-real-20260821` | ICON payload `04cfe27c...` (16,894,069 B) + metadata + sidecar; ICON payload `360b402a...` (11,693,839 B) + metadata + sidecar |
+
+The GFS payload SHA-256 `9826ecbccc0fefa20f3bfcb47f8e27ab47e5d853d2497095f8192a92a2b9bfa4`
+matches the authoritative NOAA GFS artifact recorded in `docs/data-sources.md`;
+the refresh `metadata.json` SHA-256 `f99e6967...` matches the documented
+canonical metadata sidecar. ICON payloads are the `2026082012` cycle and are
+distinct from the accepted `2026082100` approved-root artifact.
+
+### Disposition action
+
+Every file was moved, preserving its content-addressed sub-structure, under:
+
+`D:\Everest-data\raw\legacy-tmp-004\<legacy-dir>\...`
+
+with integrity reverification on write. The empty legacy directories were
+removed from the workspace. A disposition manifest was written to
+`D:\Everest-data\raw\tmp-004-disposition.json` (event `tmp_004_disposition`,
+retention class `operational_raw`, 24 months from relocation, hold state
+`none`, 11 files, 34,466,828 bytes, per-file `from`/`to`/size/SHA-256).
+
+### Boundary
+
+This completes the legacy `tmp-*` disposition under `GATEC-CLOSE-003`'s
+disposition arm. The authoritative raw-root retention, B1 ACL/IAM, B2
+legal/WORM, and release controls remain governed by their own records; no
+production deployment or release is authorized.
