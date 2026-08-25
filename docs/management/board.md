@@ -46,9 +46,9 @@ stages.
 | ID | Block | Status | Dependency | Handoff |
 | --- | --- | --- | --- | --- |
 | EV-GATEC-OP-ARCH-001 | Gate C-Operational architecture decomposition | complete | Manager sequence decision | `docs/management/decisions.md` |
-| EV-GATEC-OP-ACL-001 | Operational identities and raw-root ACL/IAM | paused; independent QA FAIL, implementation evidence retained | residual-risk register remains open; no further B1 implementation authorized by Option 3 | `docs/management/decisions.md` |
+| EV-GATEC-OP-ACL-001 | Operational identities and raw-root ACL/IAM | paused; independent QA FAIL, implementation evidence retained; Git exclusion + gitleaks clean-scan evidence now recorded (2026-08-24) | residual-risk register remains open; no further B1 implementation authorized by Option 3; QA re-evaluation pending | `docs/management/decisions.md` |
 | EV-GATEC-OP-RETENTION-002 | WORM, legal hold, and disposition | B2 offline foundation complete; offline QA/review pending | next separate task: Governance bucket/role provisioning; then backend state model and Governance QA; legal hold/disposition prohibited; canary disabled until QA PASS | `docs/management/decisions.md`, `docs/architecture/EV-GATEC-OP-RETENTION-002-backend-contract.md` |
-| EV-GATEC-OP-GIT-003 | Authoritative Git exclusion evidence | blocked | ACL/storage boundary | `docs/management/decisions.md` |
+| EV-GATEC-OP-GIT-003 | Authoritative Git exclusion evidence | evidence complete; pending independent QA acceptance | authoritative remote `Yizebaba/everest` established; raw artifacts excluded; gitleaks clean (0 new leaks vs baseline) | `docs/management/decisions.md` |
 | EV-GATEC-OP-TMP-004 | Legacy `tmp-*` inventory/disposition | blocked; no artifact operation authorized | ACL, retention, Git evidence, separate Manager authorization | `docs/management/decisions.md` |
 | EV-GATEC-OP-DB-005 | Persistent PostgreSQL and recovery | blocked | identity and retention controls | `docs/architecture/architecture.md` |
 | EV-GATEC-OP-RUNTIME-006 | Supervised service and current health | blocked | persistent PostgreSQL and secrets design | `docs/architecture/architecture.md` |
