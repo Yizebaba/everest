@@ -218,11 +218,6 @@ export function EverestScene({
           }
           terrainTilesetRef.current = tileset;
           current.scene.primitives.add(tileset);
-          if (tileset.boundingSphere) {
-            current.camera.flyTo({
-              destination: tileset.boundingSphere.center,
-            });
-          }
         } catch (error) {
           console.error("terrain tileset load failed:", error);
         }
@@ -256,7 +251,7 @@ export function EverestScene({
           tileHeight: 512,
         });
         const layer = viewer.imageryLayers.addImageryProvider(provider);
-        layer.alpha = 0.85;
+        layer.alpha = 1.0;
       } catch (error) {
         console.error("satellite imagery load failed:", error);
       }

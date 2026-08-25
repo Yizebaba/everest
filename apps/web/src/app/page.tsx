@@ -16,7 +16,6 @@ import { ModelDisagreement } from "@/components/panels/ModelDisagreement";
 import { ProvenancePopover } from "@/components/panels/ProvenancePopover";
 import { SourcesPanel } from "@/components/panels/SourcesPanel";
 import { SummitWindowPanel } from "@/components/panels/SummitWindowPanel";
-import { TimeNav } from "@/components/panels/TimeNav";
 import { VerticalProfilePanel } from "@/components/panels/VerticalProfilePanel";
 import type { CanonicalWeatherRecord } from "@/api/types";
 import { AOI_CENTER } from "@/lib/geo";
@@ -66,11 +65,6 @@ export default function Page(): React.JSX.Element {
           activeTime={activeTime}
         />
         <VerticalProfilePanel records={forecast.data?.records ?? []} />
-        <TimeNav
-          records={forecast.data?.records ?? []}
-          activeTime={activeTime}
-          onActiveTimeChange={setActiveTime}
-        />
         <CampLadder />
         <ModelDisagreement
           records={forecast.data?.records ?? []}
@@ -87,7 +81,9 @@ export default function Page(): React.JSX.Element {
         .dashboard {
           display: grid;
           grid-template-columns: 1fr 400px;
+          grid-template-rows: 100vh;
           height: 100vh;
+          overflow: hidden;
           background: #0b0e14;
           color: #e6eaf2;
           font-family: Inter, system-ui, sans-serif;
@@ -95,15 +91,19 @@ export default function Page(): React.JSX.Element {
         .dashboard__scene {
           position: relative;
           min-width: 0;
+          min-height: 0;
+          overflow: hidden;
         }
         .dashboard__rail {
           border-left: 1px solid #232c40;
           padding: 16px;
           overflow-y: auto;
+          overflow-x: hidden;
           display: flex;
           flex-direction: column;
           gap: 16px;
           background: #0d1117;
+          min-height: 0;
         }
         .dashboard__rail > :global(section),
         .dashboard__rail > :global(div) {

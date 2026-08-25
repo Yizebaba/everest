@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { ForecastResponse } from "@/api/types";
 import type { FetchState } from "@/state/useApiFetch";
@@ -11,6 +11,8 @@ const SOURCE_COLORS: Record<string, string> = {
   "noaa-gfs": "#C084FC",
   "dwd-icon": "#2DD4BF",
 };
+
+const STEP_MS = 750;
 
 export interface ForecastPanelProps {
   state: FetchState<ForecastResponse>;
@@ -25,6 +27,8 @@ export function ForecastPanel({
 }: ForecastPanelProps): React.JSX.Element {
   const { status, data, error, refetch } = state;
   const [activeSource, setActiveSource] = useState<string>("all");
+  const [playing, setPlaying] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const records = useMemo(() => data?.records ?? [], [data]);
 
@@ -48,6 +52,43 @@ export function ForecastPanel({
     activeSource === "all"
       ? records
       : records.filter((r) => r.source === activeSource);
+
+  const currentIndex =
+    activeTime == null ? -1 : distinctTimes.indexOf(activeTime);
+
+  useEffect(() => {
+    if (!playing) {
+      return undefined;
+    }
+    if (distinctTimes.length === 0) {
+      setPlaying(false);
+      return undefined;
+    }
+    timerRef.current = setInterval(() => {
+      const index =
+        activeTime == null ? 0 : Math.max(0, distinctTimes.indexOf(activeTime));
+      const next = (index + 1) % distinctTimes.length;
+      onActiveTimeChange?.(distinctTimes[next]);
+    }, STEP_MS);
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playing, distinctTimes, activeTime]);
+
+  const step = (direction: 1 | -1): void => {
+    if (distinctTimes.length === 0) {
+      return;
+    }
+    const index = activeTime == null ? -1 : distinctTimes.indexOf(activeTime);
+    const nextIndex =
+      direction === 1
+        ? (index + 1) % distinctTimes.length
+        : (index - 1 + distinctTimes.length) % distinctTimes.length;
+    onActiveTimeChange?.(distinctTimes[nextIndex]);
+  };
 
   if (status === "idle" || status === "loading") {
     return (
@@ -98,6 +139,49 @@ export function ForecastPanel({
             {source}
           </button>
         ))}
+      </div>
+      <div
+        className="forecast__time-nav"
+        role="group"
+        aria-label="Time navigation"
+      >
+        <button
+          type="button"
+          onClick={() => step(-1)}
+          disabled={distinctTimes.length === 0}
+          aria-label="Previous valid time"
+        >
+          ‹
+        </button>
+        <button
+          type="button"
+          onClick={() => setPlaying((value) => !value)}
+          disabled={distinctTimes.length === 0}
+          aria-pressed={playing}
+        >
+          {playing ? "⏸" : "▶"}
+        </button>
+        <button
+          type="button"
+          onClick={() => step(1)}
+          disabled={distinctTimes.length === 0}
+          aria-label="Next valid time"
+        >
+          ›
+        </button>
+        <input
+          type="range"
+          min={0}
+          max={Math.max(0, distinctTimes.length - 1)}
+          value={currentIndex < 0 ? 0 : currentIndex}
+          aria-label="Forecast valid time"
+          onChange={(event) =>
+            onActiveTimeChange?.(
+              distinctTimes[Number(event.target.value)] ?? null,
+            )
+          }
+        />
+        <span className="forecast__time-value">{activeTime ?? "—"}</span>
       </div>
       {distinctTimes.length === 0 ? (
         <p>No data for this selection</p>
@@ -159,6 +243,34 @@ export function ForecastPanel({
           gap: 8px;
           margin-bottom: 8px;
         }
+        .forecast__time-nav {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          margin-bottom: 8px;
+        }
+        .forecast__time-nav button {
+          font-size: 12px;
+          background: #161d2e;
+          border: 1px solid #232c40;
+          color: #e6eaf2;
+          padding: 2px 8px;
+          cursor: pointer;
+        }
+        .forecast__time-nav button[aria-pressed="true"] {
+          border-color: #7fb4ff;
+          color: #7fb4ff;
+        }
+        .forecast__time-nav input {
+          flex: 1;
+          min-width: 0;
+        }
+        .forecast__time-value {
+          font-size: 11px;
+          color: #9aa5b8;
+          min-width: 130px;
+          white-space: nowrap;
+        }
         .forecast__timeline {
           display: flex;
           gap: 4px;
@@ -181,8 +293,6 @@ export function ForecastPanel({
           display: flex;
           flex-direction: column;
           gap: 6px;
-          max-height: 260px;
-          overflow-y: auto;
         }
         .forecast__times li {
           display: flex;
