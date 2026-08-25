@@ -3,12 +3,22 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Annotated, Callable
+import logging
+import os
+import re
+from typing import Annotated, Callable, Sequence
+from urllib.parse import urlsplit
+from uuid import uuid4
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
+from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import AfterValidator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.middleware.base import RequestResponseEndpoint
 
 from everest_api.registry.models import DataSourceRegistryModel
 from everest_api.sources.models import (
@@ -18,6 +28,83 @@ from everest_api.sources.models import (
 )
 from everest_api.weather.models import WeatherRecordModel
 from everest_api.weather.service import WeatherQueryService
+
+
+_CORRELATION_HEADER = "X-Correlation-ID"
+_CORRELATION_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
+_DEFAULT_CORS_ORIGINS = (
+    "http://localhost:42420",
+    "http://localhost:48237",
+)
+_LOGGER = logging.getLogger(__name__)
+
+
+def _utc_z(value: datetime | None) -> str | None:
+    """Serialize a database datetime as an explicit UTC trailing-Z value."""
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _correlation_id(request: Request) -> str:
+    """Retain a bounded safe caller ID or generate an opaque request ID."""
+    supplied = request.headers.get(_CORRELATION_HEADER, "")
+    if _CORRELATION_PATTERN.fullmatch(supplied):
+        return supplied
+    return str(uuid4())
+
+
+def _configured_cors_origins(
+    cors_origins: Sequence[str] | None,
+) -> tuple[str, ...]:
+    """Return an explicit validated CORS allow-list from args or environment."""
+    if cors_origins is None:
+        configured = os.environ.get("EVEREST_CORS_ALLOWED_ORIGINS")
+        cors_origins = (
+            configured.split(",") if configured else _DEFAULT_CORS_ORIGINS
+        )
+    normalized = tuple(origin.strip().rstrip("/") for origin in cors_origins)
+    for origin in normalized:
+        parsed = urlsplit(origin)
+        invalid_location = not parsed.netloc or bool(parsed.path)
+        has_extra_parts = bool(parsed.query or parsed.fragment)
+        if (
+            origin == "*"
+            or parsed.scheme
+            not in {
+                "http",
+                "https",
+            }
+            or invalid_location
+            or has_extra_parts
+        ):
+            raise ValueError(f"invalid CORS origin: {origin!r}")
+    return normalized
+
+
+def _error_response(
+    status_code: int,
+    code: str,
+    message: str,
+    correlation_id: str,
+    headers: dict[str, str] | None = None,
+) -> JSONResponse:
+    """Create the public bounded error contract with correlation header."""
+    response_headers = dict(headers or {})
+    response_headers[_CORRELATION_HEADER] = correlation_id
+    return JSONResponse(
+        status_code=status_code,
+        headers=response_headers,
+        content={
+            "error": {
+                "code": code,
+                "message": message[:256],
+                "correlation_id": correlation_id,
+            }
+        },
+    )
 
 
 def _require_utc(value: datetime) -> datetime:
@@ -32,20 +119,78 @@ def _require_utc(value: datetime) -> datetime:
 UtcDateTime = Annotated[datetime, AfterValidator(_require_utc)]
 
 
-def create_app(session_factory: Callable[[], Session]) -> FastAPI:
+def create_app(
+    session_factory: Callable[[], Session],
+    cors_origins: Sequence[str] | None = None,
+) -> FastAPI:
     """Create API routes whose only data dependency is PostgreSQL."""
+    # Route handlers remain colocated in this small REST adapter; their local
+    # names intentionally count toward the factory's local-variable total.
+    # pylint: disable=too-many-locals
     app = FastAPI()
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=list(_configured_cors_origins(cors_origins)),
+        allow_credentials=False,
+        allow_methods=["GET", "OPTIONS"],
+        allow_headers=[_CORRELATION_HEADER],
+        expose_headers=[_CORRELATION_HEADER],
+    )
 
     @app.middleware("http")
     async def echo_correlation_id(
-        request: Request, call_next: object
+        request: Request, call_next: RequestResponseEndpoint
     ) -> Response:
-        """Echo correlation IDs even when request validation returns an error."""
-        response = await call_next(request)  # type: ignore[operator]
-        correlation_id = request.headers.get("X-Correlation-ID")
-        if correlation_id:
-            response.headers["X-Correlation-ID"] = correlation_id
+        """Assign and echo a safe correlation ID on every completed response."""
+        request.state.correlation_id = _correlation_id(request)
+        response = await call_next(request)
+        response.headers[_CORRELATION_HEADER] = request.state.correlation_id
         return response
+
+    @app.exception_handler(StarletteHTTPException)
+    async def http_exception_handler(
+        request: Request, error: StarletteHTTPException
+    ) -> JSONResponse:
+        """Convert intentional HTTP failures to the shared public envelope."""
+        message = (
+            error.detail if isinstance(error.detail, str) else "Request failed"
+        )
+        return _error_response(
+            error.status_code,
+            f"HTTP_{error.status_code}",
+            message,
+            request.state.correlation_id,
+            error.headers,
+        )
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_exception_handler(
+        request: Request, _error: RequestValidationError
+    ) -> JSONResponse:
+        """Return bounded validation information without body or stack details."""
+        return _error_response(
+            422,
+            "VALIDATION_ERROR",
+            "Request validation failed",
+            request.state.correlation_id,
+        )
+
+    @app.exception_handler(Exception)
+    async def unhandled_exception_handler(
+        request: Request, error: Exception
+    ) -> JSONResponse:
+        """Log unexpected failures and return a non-disclosing envelope."""
+        _LOGGER.error(
+            "Unhandled API error",
+            exc_info=error,
+            extra={"correlation_id": request.state.correlation_id},
+        )
+        return _error_response(
+            500,
+            "INTERNAL_SERVER_ERROR",
+            "Internal server error",
+            request.state.correlation_id,
+        )
 
     def get_session() -> Session:
         """Provide and always close an API request session."""
@@ -62,7 +207,7 @@ def create_app(session_factory: Callable[[], Session]) -> FastAPI:
         return [
             {
                 "record_type": item.record_type,
-                "timestamp": item.timestamp.isoformat().replace("+00:00", "Z"),
+                "timestamp": _utc_z(item.timestamp),
                 "latitude": item.latitude,
                 "longitude": item.longitude,
                 "altitude": item.altitude,
@@ -74,11 +219,7 @@ def create_app(session_factory: Callable[[], Session]) -> FastAPI:
                 "visibility": item.visibility,
                 "source": item.source_id,
                 "model": item.model,
-                "forecast_cycle": (
-                    item.forecast_cycle.isoformat().replace("+00:00", "Z")
-                    if item.forecast_cycle
-                    else None
-                ),
+                "forecast_cycle": (_utc_z(item.forecast_cycle)),
                 "forecast_lead_time": item.forecast_lead_seconds,
                 "quality_flags": item.quality_flags,
             }
@@ -158,7 +299,7 @@ def create_app(session_factory: Callable[[], Session]) -> FastAPI:
                     "source_id": row.source_id,
                     "status": row.status,
                     "health_status": row.health_status,
-                    "last_success_at": row.last_success_at,
+                    "last_success_at": _utc_z(row.last_success_at),
                 }
                 for row in rows
             ]
@@ -175,12 +316,23 @@ def create_app(session_factory: Callable[[], Session]) -> FastAPI:
                 {
                     "source_id": row.source_id,
                     "health_status": row.health_status,
-                    "last_success_at": row.last_success_at,
-                    "last_failure_at": row.last_failure_at,
+                    "last_success_at": _utc_z(row.last_success_at),
+                    "last_failure_at": _utc_z(row.last_failure_at),
                 }
                 for row in rows
             ]
         }
+
+    @app.get("/healthz")
+    def liveness() -> dict[str, str]:
+        """Process liveness: the API process is up (no dependency probe)."""
+        return {"status": "ok"}
+
+    @app.get("/readyz")
+    def readiness(session: Session = Depends(get_session)) -> dict[str, str]:
+        """Readiness: the API can reach the persistent database."""
+        session.execute(select(1))
+        return {"status": "ready"}
 
     @app.get("/api/terrain/tile")
     def terrain_tile(
@@ -221,7 +373,7 @@ def create_app(session_factory: Callable[[], Session]) -> FastAPI:
                 "resolution_degrees": row.resolution_degrees,
                 "min_elevation": row.min_elevation,
                 "max_elevation": row.max_elevation,
-                "retrieved_at": row.retrieved_at,
+                "retrieved_at": _utc_z(row.retrieved_at),
             }
         }
 
@@ -253,7 +405,7 @@ def create_app(session_factory: Callable[[], Session]) -> FastAPI:
         )
         by_station: dict[str, object] = {
             row.station: {
-                "timestamp": row.timestamp,
+                "timestamp": _utc_z(row.timestamp),
                 "station": row.station,
                 "temperature_c": row.temperature_c,
                 "relative_humidity": row.relative_humidity,
@@ -291,7 +443,7 @@ def create_app(session_factory: Callable[[], Session]) -> FastAPI:
         return {
             "segments": [
                 {
-                    "timestamp": row.timestamp,
+                    "timestamp": _utc_z(row.timestamp),
                     "band": row.band,
                     "segment": row.segment,
                     "satellite_name": row.satellite_name,
