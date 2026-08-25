@@ -6,12 +6,14 @@
 // (interactive viewport-only use per the OSMF Tile Usage Policy; Cesium loads
 // imagery tiles over XHR, which connect-src governs). api.cesium.com and
 // assets.cesium.com are permitted for Cesium ion assets (World Terrain / 3D
-// Tiles) when NEXT_PUBLIC_CESIUM_ION_TOKEN is set in .env.local.
+// Tiles) when NEXT_PUBLIC_CESIUM_ION_TOKEN is set in .env.local. ion streams
+// terrain/tile payloads from assets.ion.cesium.com (CDN), which the API
+// endpoint returns as the asset URL.
 const csp = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-eval' 'unsafe-inline'",
   "style-src 'self' 'unsafe-inline'",
-  "connect-src 'self' http://localhost:52147 http://192.168.1.11:52147 https://tile.openstreetmap.org https://api.cesium.com https://assets.cesium.com",
+  "connect-src 'self' http://localhost:52147 http://192.168.1.11:52147 https://tile.openstreetmap.org https://api.cesium.com https://assets.cesium.com https://assets.ion.cesium.com",
   "img-src 'self' data: https:",
   "font-src 'self'",
   "worker-src 'self' blob:",
