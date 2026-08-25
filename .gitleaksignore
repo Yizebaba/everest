@@ -1,0 +1,11 @@
+# Gitleaks allowlist for intentional test/documentation samples.
+#
+# a668d76652a08ab774facfb7784a49162efb2490:apps/api/tests/test_redaction.py:aws-access-token:23
+#   "AKIAABCDEFGHIJKLMNOP" is a deliberately fake AWS-key-shaped string used as a
+#   positive fixture to prove the redaction service masks credential patterns.
+#   It is not a real credential and never leaves the test input set.
+# a668d76652a08ab774facfb7784a49162efb2490:docs/meteorology/weather-spec.md:generic-api-key:842
+#   False positive: the word "FastAPI" in prose ("does not import FastAPI, ...")
+#   was matched as a generic API key. No credential or token is present.
+a668d76652a08ab774facfb7784a49162efb2490:apps/api/tests/test_redaction.py:aws-access-token:23
+a668d76652a08ab774facfb7784a49162efb2490:docs/meteorology/weather-spec.md:generic-api-key:842
