@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import { useState } from "react";
 
-import { getCurrent, getForecast } from "@/api/client";
+import { getCurrent, getEverestRoute, getForecast } from "@/api/client";
 import { CampLadder } from "@/components/panels/CampLadder";
 import { CurrentWeatherPanel } from "@/components/panels/CurrentWeatherPanel";
 import { ForecastPanel } from "@/components/panels/ForecastPanel";
@@ -29,6 +29,7 @@ export default function Page(): React.JSX.Element {
 
   const current = useApiFetch(() => getCurrent());
   const forecast = useApiFetch(() => getForecast());
+  const everestRoute = useApiFetch(() => getEverestRoute());
 
   const records = selectMapRecords(
     current.data?.records ?? [],
@@ -39,7 +40,12 @@ export default function Page(): React.JSX.Element {
   return (
     <main className="dashboard">
       <div className="dashboard__scene">
-        <EverestScene records={records} onSelectRecord={setProvenance} />
+        <EverestScene
+          records={records}
+          camps={everestRoute.data?.camps ?? []}
+          route={everestRoute.data?.route ?? []}
+          onSelectRecord={setProvenance}
+        />
       </div>
       <aside className="dashboard__rail" aria-label="Data panels">
         <SummitWindowPanel current={current} forecast={forecast} />

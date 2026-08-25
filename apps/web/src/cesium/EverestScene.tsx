@@ -15,7 +15,9 @@ import {
   Color,
   defined,
   Entity,
+  ImageryLayer,
   Ion,
+  PolylineGraphics,
   Rectangle,
   ScreenSpaceEventHandler,
   ScreenSpaceEventType,
@@ -27,6 +29,7 @@ import {
 import "cesium/Build/Cesium/Widgets/widgets.css";
 
 import type { CanonicalWeatherRecord } from "@/api/types";
+import type { EverestCamp } from "@/api/types";
 import { AOI_CENTER } from "@/lib/geo";
 
 // Optional Cesium ion token (gitignored via .env.local). When present, the
@@ -40,6 +43,8 @@ if (typeof window !== "undefined" && CESIUM_ION_TOKEN) {
 
 export interface EverestSceneProps {
   records: CanonicalWeatherRecord[];
+  camps?: EverestCamp[];
+  route?: [number, number][];
   onSelectRecord?: (record: CanonicalWeatherRecord | null) => void;
 }
 
@@ -53,8 +58,12 @@ const SOURCE_COLORS: Record<string, string> = {
   "copernicus-dem": "#94A3B8",
 };
 
+const CAMP_COLOR = "#FBBF24";
+
 export function EverestScene({
   records,
+  camps = [],
+  route = [],
   onSelectRecord,
 }: EverestSceneProps): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -103,11 +112,20 @@ export function EverestScene({
         options.terrain = Terrain.fromWorldTerrain();
       }
       viewer = new Viewer(container, options);
-      const baseLayer = new UrlTemplateImageryProvider({
-        url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-        credit: "© OpenStreetMap contributors",
-      });
-      viewer.imageryLayers.addImageryProvider(baseLayer);
+      if (CESIUM_ION_TOKEN) {
+        // Cesium World Imagery (ion-hosted Bing global imagery) replaces the
+        // OSM raster base when an ion token is configured. See
+        // EV-VIS-004 / docs/design for the base-map rationale.
+        viewer.imageryLayers.add(ImageryLayer.fromWorldImagery({}));
+      } else {
+        // OSM standard raster tiles (interactive viewport-only use, per the OSMF
+        // Tile Usage Policy). Attribution is shown in the scene footer.
+        const baseLayer = new UrlTemplateImageryProvider({
+          url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+          credit: "© OpenStreetMap contributors",
+        });
+        viewer.imageryLayers.addImageryProvider(baseLayer);
+      }
       viewer.scene.camera.setView({
         destination: Cartesian3.fromDegrees(
           AOI_CENTER.longitude,
@@ -160,6 +178,84 @@ export function EverestScene({
       viewerRef.current = null;
     };
   }, [webglOk]);
+
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer || route.length < 2) {
+      return;
+    }
+    const existing = viewer.entities.getById("osm-south-col-route");
+    if (existing) {
+      viewer.entities.remove(existing);
+    }
+    const positions = route.map(([latitude, longitude]) =>
+      Cartesian3.fromDegrees(longitude, latitude, 0),
+    );
+    viewer.entities.add(
+      new Entity({
+        id: "osm-south-col-route",
+        polyline: new PolylineGraphics({
+          positions,
+          width: 3,
+          material: Color.fromCssColorString("#FBBF24").withAlpha(0.9),
+          clampToGround: true,
+        }),
+      }),
+    );
+  }, [route, webglOk]);
+
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer) {
+      return;
+    }
+    // OSM South Col camp markers (EV-OSM-002). Re-synced whenever the camps
+    // array changes so the scene stays consistent with the persisted snapshot.
+    const existing = viewer.entities.getById("osm-camps");
+    if (existing) {
+      viewer.entities.remove(existing);
+    }
+    if (camps.length === 0) {
+      return;
+    }
+    const campGroup = new Entity({
+      id: "osm-camps",
+    });
+    for (const camp of camps) {
+      viewer.entities.add(
+        new Entity({
+          id: `osm-camp-${camp.name}`,
+          parent: campGroup,
+          position: Cartesian3.fromDegrees(
+            camp.longitude,
+            camp.latitude,
+            camp.elevation_m ?? 0,
+          ),
+          point: {
+            pixelSize: 9,
+            color: Color.fromCssColorString(CAMP_COLOR),
+            outlineColor: Color.fromCssColorString("#0B0E14"),
+            outlineWidth: 2,
+          },
+          label: {
+            text: camp.name,
+            font: "11px Inter, system-ui, sans-serif",
+            fillColor: Color.fromCssColorString("#E6EAF2"),
+            outlineColor: Color.fromCssColorString("#0B0E14"),
+            outlineWidth: 2,
+            pixelOffset: new Cartesian2(0, -14),
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          },
+          description: `${camp.name} (OSM ${camp.osm_ref ?? "—"})`,
+        }),
+      );
+    }
+    return () => {
+      if (!viewer.isDestroyed()) {
+        viewer.entities.remove(campGroup);
+      }
+    };
+  }, [camps, webglOk]);
 
   useEffect(() => {
     const viewer = viewerRef.current;

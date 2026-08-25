@@ -113,3 +113,18 @@ export interface SatelliteSegment {
 export interface SatelliteResponse {
   segments: SatelliteSegment[];
 }
+
+export interface EverestCamp {
+  name: string;
+  latitude: number;
+  longitude: number;
+  elevation_m: number | null;
+  osm_ref: string | null;
+}
+
+export interface EverestRouteResponse {
+  source_id: string;
+  dataset: string;
+  camps: EverestCamp[];
+  route: [number, number][];
+}

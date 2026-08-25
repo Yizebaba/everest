@@ -2,6 +2,7 @@ import type {
   CanonicalWeatherRecord,
   CurrentResponse,
   DataHealthResponse,
+  EverestRouteResponse,
   ForecastResponse,
   ObservationsResponse,
   ProfileLabel,
@@ -326,6 +327,73 @@ export function validateSatellite(payload: unknown): SatelliteResponse {
     throw new Error("response body missing segments array");
   }
   return { segments: body.segments as SatelliteResponse["segments"] };
+}
+
+export function validateEverestRoute(payload: unknown): EverestRouteResponse {
+  const body = payload as Record<string, unknown>;
+  if (typeof body.source_id !== "string" || body.source_id.length === 0) {
+    throw new Error("source_id invalid");
+  }
+  if (typeof body.dataset !== "string" || body.dataset.length === 0) {
+    throw new Error("dataset invalid");
+  }
+  if (!Array.isArray(body.camps)) {
+    throw new Error("camps must be an array");
+  }
+  const camps = body.camps.map((value): EverestRouteResponse["camps"][number] => {
+    if (typeof value !== "object" || value === null) {
+      throw new Error("camp must be an object");
+    }
+    const camp = value as Record<string, unknown>;
+    if (typeof camp.name !== "string" || camp.name.length === 0) {
+      throw new Error("camp name invalid");
+    }
+    if (
+      !isFiniteNumber(camp.latitude) ||
+      camp.latitude < -90 ||
+      camp.latitude > 90 ||
+      !isFiniteNumber(camp.longitude) ||
+      camp.longitude < -180 ||
+      camp.longitude > 180
+    ) {
+      throw new Error("camp coordinate invalid");
+    }
+    validateOptionalNumber(camp, "elevation_m");
+    for (const key of ["osm_ref"] as const) {
+      if (
+        camp[key] !== undefined &&
+        camp[key] !== null &&
+        typeof camp[key] !== "string"
+      ) {
+        throw new Error(`${key} invalid`);
+      }
+    }
+    return camp as unknown as EverestRouteResponse["camps"][number];
+  });
+  if (!Array.isArray(body.route)) {
+    throw new Error("route must be an array");
+  }
+  const route = body.route.map((value): [number, number] => {
+    if (
+      !Array.isArray(value) ||
+      value.length !== 2 ||
+      !isFiniteNumber(value[0]) ||
+      !isFiniteNumber(value[1]) ||
+      value[0] < -90 ||
+      value[0] > 90 ||
+      value[1] < -180 ||
+      value[1] > 180
+    ) {
+      throw new Error("route vertex invalid");
+    }
+    return [value[0] as number, value[1] as number];
+  });
+  return {
+    source_id: body.source_id,
+    dataset: body.dataset,
+    camps,
+    route,
+  };
 }
 
 export const PROFILE_LABELS: readonly ProfileLabel[] = [

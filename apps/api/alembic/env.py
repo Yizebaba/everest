@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import os
 from logging.config import fileConfig
 
 from alembic import context
@@ -12,6 +13,7 @@ from sqlalchemy import engine_from_config, pool
 
 from everest_api.persistence.database import Base
 from everest_api.registry import models  # Registers registry metadata.
+from everest_api.osm import models as osm_models  # Registers OSM metadata.
 from everest_api.weather import (
     models as weather_models,
 )  # Registers weather metadata.
@@ -19,6 +21,11 @@ from everest_api.weather import (
 config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
+
+# Allow runtime environments to supply the database URL via environment
+# variable (WSL systemd / Docker) without editing alembic.ini.
+if os.environ.get("EVEREST_DATABASE_URL"):
+    config.set_main_option("sqlalchemy.url", os.environ["EVEREST_DATABASE_URL"])
 
 target_metadata = Base.metadata
 

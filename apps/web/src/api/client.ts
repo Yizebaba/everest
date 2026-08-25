@@ -2,6 +2,7 @@ import { config } from "@/config/env";
 import type {
   CurrentResponse,
   DataHealthResponse,
+  EverestRouteResponse,
   ForecastResponse,
   ObservationsResponse,
   ProfileLabel,
@@ -13,6 +14,7 @@ import type {
 import {
   validateCurrent,
   validateDataHealth,
+  validateEverestRoute,
   validateForecast,
   validateObservations,
   validateProfile,
@@ -185,4 +187,8 @@ export function getObservations(): Promise<ObservationsResponse> {
 
 export function getSatellite(band?: number): Promise<SatelliteResponse> {
   return request("/api/satellite/segments", { band }, validateSatellite);
+}
+
+export function getEverestRoute(): Promise<EverestRouteResponse> {
+  return request("/api/everest/route", {}, validateEverestRoute);
 }

@@ -21,6 +21,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import RequestResponseEndpoint
 
 from everest_api.registry.models import DataSourceRegistryModel
+from everest_api.osm.models import OsmFeatureModel
 from everest_api.sources.models import (
     AwsObservationModel,
     SatelliteSegmentModel,
@@ -375,6 +376,48 @@ def create_app(
                 "max_elevation": row.max_elevation,
                 "retrieved_at": _utc_z(row.retrieved_at),
             }
+        }
+
+    @app.get("/api/everest/route")
+    def everest_route(
+        response: Response,
+        correlation_id: str | None = Header(
+            default=None, alias="X-Correlation-ID"
+        ),
+        session: Session = Depends(get_session),
+    ) -> dict[str, object]:
+        """Return the persisted OSM South Col camps and route polyline.
+
+        Only persisted snapshot rows are returned; no external call is made.
+        Camps are named points; route is an ordered list of [latitude,
+        longitude] vertices. This is the EV-OSM-002 display endpoint.
+        """
+        correlation(response, correlation_id)
+        rows = session.scalars(
+            select(OsmFeatureModel)
+            .order_by(OsmFeatureModel.feature_kind, OsmFeatureModel.sequence)
+        ).all()
+        camps = [
+            {
+                "name": row.name,
+                "latitude": row.latitude,
+                "longitude": row.longitude,
+                "elevation_m": row.elevation_m,
+                "osm_ref": row.osm_ref,
+            }
+            for row in rows
+            if row.feature_kind == "camp"
+        ]
+        route = [
+            [row.latitude, row.longitude]
+            for row in rows
+            if row.feature_kind == "route"
+        ]
+        return {
+            "source_id": "osm-overpass",
+            "dataset": "osm-south-col",
+            "camps": camps,
+            "route": route,
         }
 
     @app.get("/api/observations/current")
