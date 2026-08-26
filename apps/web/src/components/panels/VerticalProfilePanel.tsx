@@ -3,9 +3,14 @@
 import { useMemo } from "react";
 
 import type { CanonicalWeatherRecord } from "@/api/types";
+import { compassPoint } from "@/lib/geo";
 
 export interface VerticalProfilePanelProps {
   records: CanonicalWeatherRecord[];
+  // The forecast hour the rest of the dashboard is showing. Without it the panel
+  // stacked every lead's levels into one list, so a 13-lead cycle produced ~150
+  // unordered rows and no readable vertical column.
+  activeTime?: string | null;
 }
 
 /** Round a value to one decimal for compact display. */
@@ -23,12 +28,74 @@ export function pressureLevels(
     .sort((a, b) => a.altitude - b.altitude);
 }
 
+export interface ProfileRow {
+  record: CanonicalWeatherRecord;
+  /** Where this row is: a named camp, or the model level it came from. */
+  label: string;
+  /** True when the values were interpolated between two model levels. */
+  interpolated: boolean;
+}
+
+/** The single time column nearest ``activeTime``, or the earliest available. */
+function nearestColumn(
+  records: CanonicalWeatherRecord[],
+  activeTime: string | null | undefined,
+): string | null {
+  if (records.length === 0) {
+    return null;
+  }
+  const times = [...new Set(records.map((r) => r.timestamp))].sort();
+  if (!activeTime) {
+    return times[0];
+  }
+  const target = Date.parse(activeTime);
+  if (Number.isNaN(target)) {
+    return times[0];
+  }
+  return times.reduce((best, time) =>
+    Math.abs(Date.parse(time) - target) < Math.abs(Date.parse(best) - target)
+      ? time
+      : best,
+  );
+}
+
+/**
+ * Build one labelled vertical column: named camps and raw model levels for a
+ * single forecast hour, lowest first.
+ *
+ * The panel previously rendered only an altitude per row, so a camp's forecast
+ * was indistinguishable from the model level beside it and the climber could
+ * not tell which row was the South Col.
+ */
+export function profileRows(
+  records: CanonicalWeatherRecord[],
+  activeTime?: string | null,
+): ProfileRow[] {
+  const levels = pressureLevels(records);
+  const column = nearestColumn(levels, activeTime);
+  return levels
+    .filter((record) => record.timestamp === column)
+    .map((record) => {
+      const interpolated = /:interp[\d-]+hpa$/.test(record.spatial_key ?? "");
+      const level = /:(\d+)hpa$/.exec(record.spatial_key ?? "")?.[1];
+      return {
+        record,
+        label: record.route_profile ?? (level ? `${level} hPa` : "model level"),
+        interpolated,
+      };
+    });
+}
+
 export function VerticalProfilePanel({
   records,
+  activeTime,
 }: VerticalProfilePanelProps): React.JSX.Element {
-  const levels = useMemo(() => pressureLevels(records), [records]);
+  const rows = useMemo(
+    () => profileRows(records, activeTime),
+    [records, activeTime],
+  );
 
-  if (levels.length === 0) {
+  if (rows.length === 0) {
     return (
       <section className="profile-panel" aria-label="Vertical profile">
         <h2 className="profile-panel__title">Vertical profile</h2>
@@ -58,19 +125,28 @@ export function VerticalProfilePanel({
     );
   }
 
+  const levels = rows.map((row) => row.record);
   const maxTemp = Math.max(...levels.map((l) => l.temperature ?? -273), -273);
   const minTemp = Math.min(...levels.map((l) => l.temperature ?? 273), 273);
   const maxWind = Math.max(...levels.map((l) => l.wind_speed ?? 0), 0.01);
+  // Every row in ``rows`` shares one forecast hour, so the column can be stated
+  // once in the header instead of being invisible per row.
+  const column = levels[0]?.timestamp ?? null;
 
   return (
     <section className="profile-panel" aria-label="Vertical profile">
-      <h2 className="profile-panel__title">Vertical profile</h2>
+      <h2 className="profile-panel__title">
+        Vertical profile
+        {column ? (
+          <span className="profile-panel__column"> · {column}</span>
+        ) : null}
+      </h2>
       <div className="profile-panel__legend">
         <span className="legend-dot legend-dot--temp">Temp °C</span>
         <span className="legend-dot legend-dot--wind">Wind m/s</span>
       </div>
       <div className="profile-panel__rows">
-        {levels.map((level) => {
+        {rows.map(({ record: level, label, interpolated }) => {
           const temp = level.temperature ?? null;
           const wind = level.wind_speed ?? null;
           const tempPct =
@@ -83,8 +159,23 @@ export function VerticalProfilePanel({
               className="profile-row"
               key={`${level.spatial_key}-${level.timestamp}`}
             >
-              <span className="profile-row__level">
-                {level.altitude.toFixed(0)}m
+              <span className="profile-row__label">
+                <span className="profile-row__place">
+                  {label}
+                  {/* An interpolated camp value is not a model output; saying so
+                      keeps the climber from reading it as directly forecast. */}
+                  {interpolated ? (
+                    <abbr
+                      className="profile-row__interp"
+                      title="Interpolated between the bracketing model levels"
+                    >
+                      ~
+                    </abbr>
+                  ) : null}
+                </span>
+                <span className="profile-row__altitude">
+                  {level.altitude.toFixed(0)} m
+                </span>
               </span>
               <div className="profile-row__bars">
                 <div className="profile-row__bar profile-row__bar--temp">
@@ -104,6 +195,19 @@ export function VerticalProfilePanel({
               </div>
               <span className="profile-row__values">
                 {fmt(temp)}°C · {fmt(wind)} m/s
+                {/* Wind direction was persisted and drawn as a 3D barb but never
+                    stated in text, so the panel could not answer which way the
+                    wind crosses a camp. It is the bearing the wind blows from. */}
+                {level.wind_direction === null ||
+                level.wind_direction === undefined ? null : (
+                  <span
+                    className="profile-row__from"
+                    title={`From ${level.wind_direction.toFixed(0)}°`}
+                  >
+                    {" "}
+                    ← {compassPoint(level.wind_direction)}
+                  </span>
+                )}
               </span>
             </div>
           );
@@ -146,14 +250,36 @@ export function VerticalProfilePanel({
         }
         .profile-row {
           display: grid;
-          grid-template-columns: 56px 1fr 110px;
+          grid-template-columns: 104px 1fr 150px;
           align-items: center;
           gap: 8px;
           font-size: 0.72rem;
         }
-        .profile-row__level {
+        .profile-row__from {
           color: #9aa5b8;
-          text-align: right;
+        }
+        .profile-panel__column {
+          color: #5c6f82;
+          font-weight: 400;
+        }
+        .profile-row__label {
+          display: flex;
+          flex-direction: column;
+          align-items: flex-end;
+          line-height: 1.25;
+        }
+        .profile-row__place {
+          color: #c6cfdd;
+        }
+        .profile-row__interp {
+          color: #5c6f82;
+          border: none;
+          text-decoration: none;
+          margin-left: 2px;
+        }
+        .profile-row__altitude {
+          color: #5c6f82;
+          font-size: 0.66rem;
         }
         .profile-row__bars {
           display: flex;

@@ -82,12 +82,21 @@ class EcmwfOpenDataConnector:  # pylint: disable=too-few-public-methods
         payload_path = artifact_dir / filename
         self._write_verified(payload_path, payload, digest)
         metadata_path = artifact_dir / "metadata.json"
-        self._write_metadata(
-            metadata_path,
-            self._metadata(
-                cycle, lead_hours, url, index_url, ranges, payload, digest
-            ),
-        )
+        if metadata_path.exists():
+            # This payload is already retained from an earlier run. Its metadata
+            # records that run's ``retrieved_at``, so rebuilding the metadata
+            # here yields a different digest and the reuse check rejected it as
+            # inconsistent - which made every cached cycle unusable once the
+            # raw tree stopped being wiped between runs. Verify what is retained
+            # instead of rewriting it.
+            self._verify_retained_metadata(metadata_path, digest)
+        else:
+            self._write_metadata(
+                metadata_path,
+                self._metadata(
+                    cycle, lead_hours, url, index_url, ranges, payload, digest
+                ),
+            )
         return RawRetrieval(
             payload_path,
             metadata_path,
@@ -224,6 +233,34 @@ class EcmwfOpenDataConnector:  # pylint: disable=too-few-public-methods
             )
             + "\n"
         ).encode("utf-8")
+
+    def _verify_retained_metadata(self, path: Path, payload_digest: str) -> None:
+        """Accept already-retained metadata only if intact and about this payload.
+
+        Unlike ``_verify_metadata`` this does not require the metadata to be
+        byte-identical to a freshly built copy: the retrieval timestamp inside it
+        legitimately differs between runs. It still requires the sidecar to match
+        the retained bytes, the JSON to be canonical, and the recorded payload
+        digest to be the payload just fetched.
+        """
+        checksum_path = path.with_name(f"{path.name}.sha256")
+        if not checksum_path.exists():
+            raise ValueError("metadata or metadata checksum sidecar is missing")
+        encoded = path.read_bytes()
+        sidecar = checksum_path.read_text(encoding="ascii").strip()
+        if self._sha256(encoded) != sidecar:
+            raise ValueError("metadata checksum sidecar is inconsistent")
+        try:
+            parsed = json.loads(encoded.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise ValueError("metadata is not valid UTF-8 JSON") from error
+        if (
+            not isinstance(parsed, dict)
+            or self._canonical_json(parsed) != encoded
+        ):
+            raise ValueError("metadata is not canonical deterministic JSON")
+        if parsed.get("sha256") != payload_digest:
+            raise ValueError("retained metadata describes a different payload")
 
     def _verify_metadata(
         self, path: Path, checksum_path: Path, expected_digest: str

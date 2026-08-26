@@ -11,7 +11,10 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
-from everest_api.persistence.database import create_session_factory
+from everest_api.persistence.database import (
+    create_session_factory,
+    resolve_database_url,
+)
 from everest_api.registry.models import DataSourceRegistryModel
 from everest_api.sources.models import (
     AwsObservationModel,
@@ -24,16 +27,13 @@ from everest_api.sources.normalizers import (
     normalize_terrain_tile,
 )
 
-DEFAULT_URL = "postgresql+psycopg://everest:everest@127.0.0.1:5432/everest_test"
 _UTC = timezone.utc
 
 
 def main() -> None:
     """Ingest the retained GLO-30, Everest AWS, and Himawari samples."""
     root = Path(os.environ.get("EVEREST_RAW_ROOT", r"D:\Everest-data\raw"))
-    session_factory = create_session_factory(
-        os.environ.get("EVEREST_DATABASE_URL", DEFAULT_URL)
-    )
+    session_factory = create_session_factory(resolve_database_url())
     with session_factory() as session:
         session.execute(
             __import__("sqlalchemy").text(

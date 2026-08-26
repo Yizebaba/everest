@@ -79,6 +79,25 @@ def _finite(value: Optional[float]) -> bool:
     return value is None or math.isfinite(value)
 
 
+# Physically plausible inclusive bounds in the canonical units, wide enough to
+# admit any real Everest-region value and narrow enough to catch a unit that was
+# never converted. Without these, an unconverted Kelvin temperature (300) or a
+# Pascal pressure (101325) validates as ``clean``.
+_PLAUSIBLE_RANGES: dict[str, tuple[float, float]] = {
+    "altitude": (-500.0, 20000.0),  # m above mean sea level
+    "wind_speed": (0.0, 150.0),  # m/s
+    "gust_speed": (0.0, 200.0),  # m/s
+    "temperature": (-100.0, 60.0),  # degrees C, not Kelvin
+    "dew_point": (-100.0, 60.0),  # degrees C
+    "precipitation": (0.0, 2000.0),  # mm
+    "snowfall": (0.0, 2000.0),  # mm water equivalent
+    "visibility": (0.0, 100000.0),  # m
+    "pressure": (100.0, 1100.0),  # hPa, not Pa
+    "cloud_base": (0.0, 20000.0),  # m
+    "cloud_top": (0.0, 25000.0),  # m
+}
+
+
 def validate_record(  # pylint: disable=too-many-branches
     record: WeatherRecord,
 ) -> frozenset[str]:
@@ -111,8 +130,12 @@ def validate_record(  # pylint: disable=too-many-branches
         record.snowfall,
         record.gust_speed,
     )
+    # A None value is "missing", not "out of range": both flags would be
+    # redundant. ``missing_value`` is descriptive, not a rejection - a record
+    # whose provider simply does not publish a field (IFS open data has no
+    # visibility) carries the flag so consumers can see what is absent.
     if not all(_finite(value) for value in numeric_values):
-        flags.add(QualityFlag.OUT_OF_RANGE.value)
+        flags.add(QualityFlag.MISSING_VALUE.value)
     non_negative = (
         record.wind_speed,
         record.precipitation,
@@ -134,6 +157,11 @@ def validate_record(  # pylint: disable=too-many-branches
         for value in (record.relative_humidity, record.cloud_cover)
     ):
         flags.add(QualityFlag.OUT_OF_RANGE.value)
+    for name, (low, high) in _PLAUSIBLE_RANGES.items():
+        value = getattr(record, name)
+        if value is not None and math.isfinite(value) and not low <= value <= high:
+            flags.add(QualityFlag.OUT_OF_RANGE.value)
+            break
     if not record.source or not record.model:
         flags.add(QualityFlag.PROVENANCE_ERROR.value)
     if record.record_type is RecordType.FORECAST:
@@ -151,6 +179,7 @@ def validate_record(  # pylint: disable=too-many-branches
         for value in (
             record.wind_speed,
             record.temperature,
+            record.precipitation,
             record.visibility,
         )
     ):

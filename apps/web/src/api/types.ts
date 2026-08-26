@@ -127,4 +127,7 @@ export interface EverestRouteResponse {
   dataset: string;
   camps: EverestCamp[];
   route: [number, number][];
+  // Null until the OSM peak node has been ingested. The scene leaves the summit
+  // unmarked in that case rather than drawing a hard-coded 8848 m point.
+  summit: EverestCamp | null;
 }

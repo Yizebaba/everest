@@ -44,6 +44,7 @@ export default function Page(): React.JSX.Element {
           records={records}
           camps={everestRoute.data?.camps ?? []}
           route={everestRoute.data?.route ?? []}
+          summit={everestRoute.data?.summit ?? null}
           onSelectRecord={setProvenance}
         />
       </div>
@@ -55,7 +56,10 @@ export default function Page(): React.JSX.Element {
           onActiveTimeChange={setActiveTime}
           activeTime={activeTime}
         />
-        <VerticalProfilePanel records={forecast.data?.records ?? []} />
+        <VerticalProfilePanel
+          records={forecast.data?.records ?? []}
+          activeTime={activeTime}
+        />
         <CampLadder />
         <ModelDisagreement
           records={forecast.data?.records ?? []}

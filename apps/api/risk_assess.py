@@ -10,7 +10,6 @@ Reuses the EV-RISK-001 engine with the highest pressure level (300 hPa ~
 
 from __future__ import annotations
 
-import os
 import sys
 
 sys.path.insert(0, "/mnt/d/Everest")
@@ -31,8 +30,9 @@ from services.weather.contract import (  # noqa: E402
 
 
 def db_url() -> str:
-    pw = os.environ["EVEREST_DB_PASSWORD"]
-    return f"postgresql+psycopg://everest:{pw}@127.0.0.1:56021/everest"
+    from everest_api.persistence.database import resolve_database_url
+
+    return resolve_database_url()
 
 
 def _to_weather_record(row: WeatherRecordModel) -> WeatherRecord:

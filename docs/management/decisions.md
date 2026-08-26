@@ -70,10 +70,303 @@ inspection (AC-02) remains a gate.
 `verified`; they remain `connected`/`configured` until real-data retrieval,
 parsing, normalization, QC, persistence, API, tests, docs, and review pass.
 
+## ADR-EV-VIS-004: Cesium base-map replacement (World Imagery + World Terrain)
+
+**Date:** 2026-08-26  
+**Status:** Approved by Everest Manager (project owner granted permission to
+proceed)  
+**Scope:** Replace the Cesium scene base imagery from OSM raster tiles with
+**Cesium World Imagery** (ion-hosted Bing global imagery) and use **Cesium
+World Terrain** for 3D terrain, when `NEXT_PUBLIC_CESIUM_ION_TOKEN` is set in
+`apps/web/.env.local`. OSM remains the automatic fallback when no ion token is
+configured.
+
+**Verified official facts (consulted 2026-08-26):**
+
+- CesiumJS itself is open source (Apache 2.0). Cesium ion is a commercial
+  hosting platform with a free **Community** plan for personal/non-commercial
+  use (5 GB storage, 15 GB/month streaming), paid **Commercial** ($149/month
+  individual / $524/month team) and **Premium** ($499/$874/month) plans.
+  Official: <https://cesium.com/platform/cesium-ion/pricing/>. The ion ToS
+  require a paid plan when the organization exceeds $50K annual revenue, runs a
+  government project, funded research, or exceeds free quotas.
+- Cesium World Terrain is ion-hosted global quantized-mesh 1.0 terrain (curated
+  DEM; Everest region 30–90 m resolution). Free to stream with a free ion
+  account within quotas; offline purchase and on-premises are available.
+  Official: <https://cesium.com/platform/cesium-ion/content/cesium-world-terrain/>.
+- Open-source vs paid-map standards differ in three ways: **format** (OSM uses
+  XYZ Web Mercator raster `{z}/{x}/{y}.png`; Cesium uses quantized-mesh terrain
+  and ion-hosted raster/3D Tiles), **usage/licence** (OSM is ODbL + OSMF Tile
+  Usage Policy: attribution, User-Agent, no bulk scraping, no SLA; Cesium ion is
+  ToS-governed, quota-based, paid for commercial use), and **service quality**
+  (OSM is best-effort donation-funded; ion has quotas and paid SLAs). Official
+  OSM policy: <https://operations.osmfoundation.org/policies/tiles/>.
+
+**Implementation:** `apps/web/src/cesium/EverestScene.tsx` adds
+`ImageryLayer.fromWorldImagery()` when the ion token is present; terrain uses
+`Terrain.fromWorldTerrain()`. `apps/web/next.config.mjs` CSP adds
+`http/https *.virtualearth.net` (Bing tiles are served over http) and `img-src
+http:`.
+
+**Verification (2026-08-26):** live headless-Chromium load showed 42
+virtualearth imagery tile requests and 44 Cesium World Terrain terrain tile
+requests with zero CSP violations. Web typecheck, ESLint, prettier clean;
+42 vitest tests pass. This replaces the prior OSM-only base-map rendering and
+does not change weather/observation data flow; the frontend still never calls
+weather providers directly.
+
+**Licensing note:** World Imagery/World Terrain are ion content. Free Community
+use is non-commercial and quota-limited; commercial Everest deployment requires
+a paid Cesium ion plan. This decision records source terms, not legal approval
+for a specific commercial deployment.
+
+## EV-VIS-006: Restore live data chain and overlay weather on the 3D scene
+
+**Date:** 2026-08-26  
+**Status:** Completed by Everest Manager authorization (user requested the 3D
+scene be made serviceable and show real weather data).  
+**Scope:** The persistent runtime had been torn down, so the backend API and
+database were not serving data. Restored the chain and extended the Cesium scene
+with real weather overlays.
+
+**Data chain restore (no re-download):**
+
+- WSL PostgreSQL 15 cluster started on port 5432; role `everest` and database
+  `everest_test` created.
+- Alembic migrations applied to head (`20260821_0001` … `20260826_0009`),
+  creating all 14 application tables.
+- The retained immutable IFS artifact (cycle `2026-08-24T00:00:00Z`, lead 0,
+  variables `z/10u/10v/2t`, SHA-256 `638a075b…`) recorded in
+  `docs/data-sources.md` was parsed with ecCodes and persisted through
+  `WeatherIngestionService` by `apps/api/ingest_retained_ifs.py`. No external
+  provider call was made. Database holds 2 raw artifacts and 2 canonical
+  records (prior ICON + this IFS).
+- Backend FastAPI runs on `127.0.0.1:52147` (reachable from Windows;
+  `localhost` from Windows times out under the mirrored-network setup).
+  `apps/web/.env.local` points at `127.0.0.1:52147`; CSP allows it.
+- Verified over HTTP: `/api/weather/current` returns the IFS record
+  (28.0, 87.0, 6008 m, -6.0 °C), `/api/weather/forecast` returns ICON, and
+  `/api/weather/sources` + `/api/data-health` return lifecycle facts.
+
+**3D weather overlay (real data only, no fabrication):**
+
+- Weather grid points now render a label with temperature, wind speed, and an
+  oxygen-fraction estimate, plus a wind-direction vector line built from the
+  record's real `wind_direction`. `windVector` in `lib/geo.ts` converts the
+  meteorological "wind FROM" direction into the travel vector.
+- Oxygen fraction uses the standard barometric scale-height formula
+  (`oxygenFractionAtAltitude`), labeled `est.` and never presented as a
+  provider-reported value (AGENTS.md: no invented data).
+- The OSM South Col route now samples Cesium World Terrain elevation via
+  `sampleTerrainMostDetailed` and labels real heights at a bounded stride.
+- Verified in headless Chromium: forecast/current/sources/data-health all
+  return real records; the scene renders 25k+ marker/label pixels with zero
+  console errors; web typecheck/lint/prettier clean, 49 tests pass.
+
+**Scope limits:** only two canonical weather records exist (IFS + ICON). Camp
+labels do not claim per-camp forecasts; the weather markers are the actual grid
+points. Additional sources (GFS, AIFS, and more leads) require the scheduler or
+a separately authorized ingestion run.
+
 **Verified-at-research facts** (from official docs, 2026-08-24) are recorded in
 the relevant handoffs; items marked `UNKNOWN/PENDING` in the research
 (licenses beyond free distribution, exact quota numbers, Everest-AWS commercial
 terms) are not claimed as verified.
+
+## EV-VIS-007: Forecast data-pipeline refresh — stale data and missing fields
+
+**Date:** 2026-08-26  
+**Status:** Completed by Everest Manager authorization (user explicitly granted
+permission to bypass project-documentation limits and fix the data pipeline).  
+**Root cause:** The database held only two old forecast records (ICON
+2026-08-21, IFS 2026-08-24), so the UI reported `stale basis (115 h)`, and the
+weather QC incorrectly flagged every provider that does not publish visibility
+(e.g. IFS open data) as both `missing_value` and `out_of_range`, which blocked
+the Summit Window decision even with fresh wind/temperature.
+
+**Official-source verification (2026-08-25/26):**
+
+- ECMWF IFS Open Data surface products do NOT include a visibility variable
+  (verified against the official JSON-Lines index: `z, 10u, 10v, 2t, tp, tprate,
+  10fg, tcc, …`). Precipitation (`tp`) and gust (`10fg`) are present.
+- NOAA GFS `pgrb2.0p25` DOES include `VIS` (surface, m) and `APCP` (surface,
+  kg/m²) on forecast files f003+. Verified against the official NOMADS file
+  inventory (`gfs.t00z.pgrb2.0p25.f000.shtml`: "Visibility [m]") and the `.idx`
+  contents (`VIS:surface`, `APCP:surface` present on f003+; absent on f000
+  analysis, which carries only `PRATE`).
+- DWD ICON Open Data has `tot_prec`/`rain_gsp`/`snow_gsp` for precipitation but
+  no visibility product (verified against the official directory listing).
+
+**Changes:**
+
+1. `services/weather/gfs/connector.py` + `normalizer.py`: added `VIS` and
+   `APCP` to the default messages and `EXPECTED_UNITS` (`vis: m`,
+   `apcp: kg m**-2`); `visibility` is now populated for GFS.
+2. `apps/api/ingest_refresh.py`: fetches the latest published cycles over
+   official HTTP byte ranges (IFS 2026-08-25 06Z leads 0/3/6/12/24/48/72 h;
+   GFS 2026-08-25 12Z f003/f006/f024), parses with ecCodes, normalizes, and
+   persists through `WeatherIngestionService`. It does not reuse a metadata
+   sidecar cache, avoiding the connector's idempotency "checksum sidecar
+   inconsistent" trip on a refresh pass. IFS altitude is carried from the
+   lead-0 `z` for later leads (same as the accepted scheduler logic).
+3. `services/weather/contract.py` QC: a `None` field is `missing_value`, not
+   additionally `out_of_range` (the two flags have distinct meanings; flagging
+   both falsely degraded any record with an optional field the provider does
+   not publish).
+4. `apps/web/src/lib/geo.ts` `summitBasisRecord`: prefers the freshest record
+   (valid time), then distance, then altitude — a current IFS/GFS forecast
+   wins over an older nearer sample.
+5. `apps/web/src/components/panels/SummitWindowPanel.tsx` `isClean`: accepts
+   `missing_value` so a provider without visibility does not block the
+   wind-based decision; other flags remain disqualifying.
+
+**Verification (live):** database rebuilt clean (10 records: IFS 7 + GFS 3, all
+real provider data, no NaN altitude). Summit Window shows **GO** with IFS
+2026-08-28 06Z (0.0 °C, 0.6 m/s, 7.5 mm precip), `stale basis` gone, agreement
+GO 2 / sources 2 / stale 0, GFS visibility 996/13045/50 m over its leads.
+`/api/weather/current` returns all 10 records; `/api/weather/forecast` returns
+them. Web 51 tests pass; weather suite 109 pass (2 pre-existing environment
+failures unrelated to this change). ECMWF IFS has no visibility field in its
+public open data — that remains honestly `unavailable` rather than fabricated.
+
+**Rollback:** every change is additive and reversible; no raw artifact was
+deleted. The database was recreated (drop/create + migrate + ingest) to clear
+pre-fix QC rows; this is reproducible from `ingest_refresh.py`.
+
+## EV-VIS-008: Mount weather data on the 3D scene (camp boards, wind particles, terrain picking)
+
+**Date:** 2026-08-26  
+**Status:** Completed by Everest Manager authorization (user requested these
+three concrete Cesium bindings).  
+**Scope:** Make the weather data actually visible in the 3D map.
+
+**1. Camp 3D floating boards (Billboard & Label).** The OSM South Col camps
+(EBC, Camp 1S, 2S, 3S, 4S South Col) render as floating label entities carrying
+the nearest weather record's temperature / wind / visibility. Camp and route
+geometry come from the approved OSM Overpass source and were re-seeded after
+the EV-VIS-007 database rebuild (`apps/api/ingest_osm_route.py`; 5 camps + 359
+route vertices). No camp coordinates are invented; elevations are taken from the
+OSM snapshot or Cesium terrain.
+
+**2. Wind particle field (ParticleSystem).** One Cesium `ParticleSystem` is
+created per weather grid point that has a real `wind_direction`/`wind_speed`.
+Particles stream along the meteorological travel vector (derived from the
+"wind FROM" direction) above the terrain, coloured by source (IFS cyan, GFS
+purple, etc.). Emission rate and particle life are bounded for visual clarity;
+wind speed sets the visual baseline (min 2 m/s).
+
+**3. Terrain picking (MOUSE_MOVE).** A `ScreenSpaceEventHandler` on
+`MOUSE_MOVE` uses `viewer.scene.sampleHeight` at the cursor plus four neighboring
+probes (~50 m) to compute and display live altitude and slope in a bottom-left
+scene readout (e.g. `alt 4975 m · slope 18.1°`).
+
+**StrictMode/unmount hardening.** React 18 StrictMode double-invokes effects;
+the original cleanup callbacks called `viewer.isDestroyed()`, which itself
+throws on a torn-down Viewer (`Cannot read properties of undefined (reading
+'scene'/'entities')`). All cleanups and async callbacks now guard with
+`viewerRef.current === viewer` (a plain ref comparison) instead of touching
+Viewer internals after teardown.
+
+**Verification (live headless Chromium):** zero console/page errors; terrain
+pick returns real elevation and slope; pixel analysis confirms IFS markers +
+particles (2.5k+ cyan px) and camp/route amber labels render; web
+typecheck/lint clean, 51 tests pass.
+
+## EV-VIS-009: Cesium scene performance — requestRenderMode (4 → 60 FPS)
+
+**Date:** 2026-08-26  
+**Status:** Completed by Everest Manager authorization (user reported the map
+was "非常卡").  
+**Root cause:** the scene rendered at ~4 FPS with the CPU idle. Diagnostics in
+headless Chromium: `TaskDuration` ~3 ms (CPU fine), but canvas
+`visibility:hidden` jumped FPS to 60 (rAF idle) while restoring the canvas
+collapsed it back to 0–4 FPS. This proves Cesium's default `Viewer` re-draws
+the full viewport every animation frame regardless of scene change, and the
+1024×900 terrain+imagery repaint saturated the rasterizer. In a software
+renderer this floor is ~4 FPS; on a real GPU it is smoother but still wasteful
+and the user experienced visible stutter.
+
+**Fix (`apps/web/src/cesium/EverestScene.tsx`):**
+
+- `requestRenderMode: true` + `maximumRenderTimeChange: 0.5` on the `Viewer`
+  options, so Cesium renders only when something changes (camera move, tiles
+  streaming, entity edits, or a render request), instead of repainting every
+  frame.
+- Reduced wind-particle load: particle life 1.2 s (was 3.0), emissionRate 3
+  (was 12), burst 4–6 (was 20–30), imageSize 4 px (was 6), emitter radius 40
+  (was 60), alpha 0.7 start.
+- Throttled terrain picking to 100 ms between `sampleHeight` batches and cut
+  the slope probes from 4 to 2 orthogonal neighbors (~50 m), keeping the
+  per-hover raycast count low.
+
+**Verification:** FPS 4 → **60** idle in the same headless environment, zero
+console/page errors, terrain picking still returns real elevation/slope, wind
+particles still render during camera motion. Web typecheck/lint clean, 51 tests
+pass.
+
+## EV-VIS-006-INCIDENT-002: User cannot see 3D terrain in their browser
+
+**Repeated-failure event count:** 3 (three identical user reports: "不是3d",
+"还是没有3d", "我在地图上都看不到，立体的").
+
+**Affected component:** Cesium 3D scene rendering in the user's browser.
+
+**Server-side evidence collected (2026-08-26):**
+
+- WSL PostgreSQL 15 online (port 5432); alembic head (`0009`); 14 tables;
+  `everest_test` reachable from Windows via `127.0.0.1:5432`.
+- Backend FastAPI on `127.0.0.1:52147` returns HTTP 200 for
+  `/api/weather/current` (2 records), `/api/weather/forecast` (2 records),
+  `/api/weather/sources`, `/api/data-health`.
+- Frontend `http://localhost:52148/` returns HTTP 200; `.env.local` points at
+  `127.0.0.1:52147`; CSP allows it; dev server serves the current bundle
+  (contains `enableLighting`, `requestVertexNormals`, `fromWorldImagery`).
+- Headless Chromium (Playwright) loaded the page: canvas present
+  (1024x900), WebGL available, 7 panels rendered, **zero console errors**,
+  terrain `getHeight` returns summit 8773 m / EBC 5234 m, World Terrain tiles
+  load at zoom 10–13 with `octvertexnormals`, lighting on/off brightness delta
+  124, 25k+ weather-marker pixels rendered.
+- Web typecheck/lint/prettier clean; 49 vitest tests pass.
+
+**Root-cause analysis:**
+
+The application, API, database, and headless-rendering paths are all verified
+working. The user still reports a flat, non-3D map with none of the overlays
+visible. Because the same server-side build renders 3D correctly in an isolated
+browser, the failure signature points to the **user's browser session**, not the
+application code. Two leading hypotheses (both browser-side):
+
+1. **Stale bundle / cache:** the browser is still executing a pre-change chunk
+   (the original 45 km nadir view without lighting or overlays) and hard refresh
+   was not performed or was blocked by a proxy/service worker.
+2. **Different origin:** the user is viewing a different port or a proxied copy
+   of the page (the dev log shows `layui` CSS requests, which this app never
+   emits, implying another local page/proxy is involved).
+
+**Status:** PAUSED pending Everest Manager / user input. The next attempt will
+NOT modify server code until the user reports:
+- the exact URL they open (port and host),
+- the browser and version,
+- whether a hard refresh (Ctrl+Shift+R / Cmd+Shift+R) or an incognito window was
+  tried,
+- a screenshot or description of what the map area actually shows (blank / dark
+  / flat imagery / error text).
+
+**Correct next-run procedure (after user input):**
+
+1. Confirm the exact URL matches `http://localhost:52148/` (or the network IP
+   the dev server prints).
+2. Perform a hard refresh or open an incognito window; verify via the page
+   "Summit Window" panel that live data (e.g. "-6.0 °C" IFS) is present.
+3. If the scene area is blank/dark, check the browser console (F12) for
+   WebGL/Cesium errors and capture them.
+4. Only after this evidence is captured should server-side code be changed.
+
+**Rollback:** no destructive change was made; all changes are additive
+(lighting clock pin, overlays, ingest script). Reverting to OSM-only requires
+removing the ion token from `.env.local`.
+
+**Date:** 2026-08-26
 
 **Date:** 2026-08-24  
 **Status:** Approved by Everest Manager via `/plan-ceo-review` (SCOPE EXPANSION)

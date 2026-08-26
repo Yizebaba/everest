@@ -13,7 +13,6 @@ Usage:  python ingest_osm_route.py
 
 from __future__ import annotations
 
-import os
 import sys
 
 sys.path.insert(0, "/mnt/d/Everest")
@@ -28,12 +27,14 @@ from everest_api.osm import (  # noqa: E402
     fetch_route_vertices,
     normalize_camps,
 )
+from everest_api.osm.overpass import fetch_summit  # noqa: E402
 from everest_api.registry.models import DataSourceRegistryModel  # noqa: E402
 
 
 def _env_db_url() -> str:
-    pw = os.environ["EVEREST_DB_PASSWORD"]
-    return f"postgresql+psycopg://everest:{pw}@127.0.0.1:56021/everest"
+    from everest_api.persistence.database import resolve_database_url
+
+    return resolve_database_url()
 
 
 def _seed(session) -> None:
@@ -69,6 +70,7 @@ def main() -> None:
     """Fetch Overpass data and sync the South Col snapshot to PostgreSQL."""
     camps = fetch_camps()
     route = fetch_route_vertices()
+    summit = fetch_summit()
     if not camps and not route:
         print("no OSM features returned; aborting without writing")
         raise SystemExit(1)
@@ -80,9 +82,16 @@ def main() -> None:
     count = service.sync(
         normalize_camps(camps),
         route,
+        normalize_camps([summit])[0] if summit else None,
     )
+    missing = [c["name"] for c in camps if c.get("elevation_m") is None]
     print(f"synced {count} OSM features "
-          f"({len(camps)} camps, {len(route)} route vertices)")
+          f"({len(camps)} camps, {len(route)} route vertices, "
+          f"summit={'yes' if summit else 'no'})")
+    if missing:
+        # Reported rather than filled in: a camp with no OSM ele would be drawn
+        # at sea level, and inventing a height here would hide that.
+        print(f"camps without an OSM ele tag: {', '.join(missing)}")
 
 
 if __name__ == "__main__":

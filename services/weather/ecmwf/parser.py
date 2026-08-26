@@ -45,7 +45,19 @@ def parse_grib_bytes(  # pylint: disable=too-many-locals
         temporary.flush()
         with open(temporary.name, "rb") as stream:
             while True:
-                handle = codes_grib_new_from_file(stream)
+                try:
+                    handle = codes_grib_new_from_file(stream)
+                except (ValueError, RuntimeError):
+                    # Already the contract's error type: keep the message.
+                    raise
+                except Exception as error:  # pylint: disable=broad-except
+                    # ecCodes raises platform-specific errors (e.g.
+                    # PrematureEndOfFileError) for bytes that are not a GRIB
+                    # stream. Translate them so callers see the contract's
+                    # ValueError instead of a gribapi internal error.
+                    raise ValueError(
+                        "payload is not a readable GRIB2 stream"
+                    ) from error
                 if handle is None:
                     break
                 try:

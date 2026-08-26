@@ -284,6 +284,48 @@ def test_metadata_reuse_rejects_tampered_checksum_sidecar(
         connector._write_metadata(path, {"source": "ecmwf-ifs"})
 
 
+def test_retained_metadata_is_reused_when_the_payload_is_unchanged(
+    tmp_path: Path,
+) -> None:
+    """A cached artifact is accepted although its ``retrieved_at`` is older.
+
+    Rebuilding the metadata on a second retrieval produces a newer timestamp and
+    therefore a different digest, so requiring byte equality made every already
+    retained cycle fail once the raw tree stopped being wiped between runs.
+    """
+    connector = EcmwfOpenDataConnector(tmp_path)
+    path = tmp_path / "metadata.json"
+    connector._write_metadata(
+        path, {"sha256": "a" * 64, "retrieved_at": "2026-08-01T00:00:00+00:00"}
+    )
+    connector._verify_retained_metadata(path, "a" * 64)
+
+
+def test_retained_metadata_about_another_payload_is_rejected(
+    tmp_path: Path,
+) -> None:
+    """Reuse requires the retained metadata to describe this exact payload."""
+    connector = EcmwfOpenDataConnector(tmp_path)
+    path = tmp_path / "metadata.json"
+    connector._write_metadata(path, {"sha256": "a" * 64})
+    with pytest.raises(ValueError, match="different payload"):
+        connector._verify_retained_metadata(path, "b" * 64)
+
+
+def test_retained_metadata_with_a_tampered_sidecar_is_rejected(
+    tmp_path: Path,
+) -> None:
+    """Relaxing the timestamp check does not relax the integrity check."""
+    connector = EcmwfOpenDataConnector(tmp_path)
+    path = tmp_path / "metadata.json"
+    connector._write_metadata(path, {"sha256": "a" * 64})
+    checksum_path = tmp_path / "metadata.json.sha256"
+    checksum_path.chmod(0o644)
+    checksum_path.write_text("0" * 64, encoding="ascii")
+    with pytest.raises(ValueError, match="sidecar is inconsistent"):
+        connector._verify_retained_metadata(path, "a" * 64)
+
+
 def test_parser_rejects_non_grib_payload() -> None:
     """Parser does not turn arbitrary bytes into weather records."""
     with pytest.raises(Exception):  # ecCodes exposes platform-specific errors.

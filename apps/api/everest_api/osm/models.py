@@ -19,7 +19,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from everest_api.persistence.database import Base
 
-OSM_FEATURE_KINDS = ("camp", "route")
+OSM_FEATURE_KINDS = ("camp", "route", "summit")
 
 
 class OsmFeatureModel(
@@ -53,7 +53,8 @@ class OsmFeatureModel(
     )
     __table_args__ = (
         CheckConstraint(
-            "feature_kind IN ('camp', 'route')", name="ck_osm_feature_kind"
+            "feature_kind IN ('camp', 'route', 'summit')",
+            name="ck_osm_feature_kind",
         ),
         CheckConstraint(
             "sequence >= 0", name="ck_osm_feature_sequence"

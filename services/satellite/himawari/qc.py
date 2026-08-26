@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from himawari.parser import SegmentInfo
+from services.satellite.himawari.parser import SegmentInfo
 
 EXPECTED_SATELLITE = "Himawari"
 EXPECTED_AREAS = {"FLDK", "JP01", "TA01"}

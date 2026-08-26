@@ -20,12 +20,14 @@ import requests
 
 
 OFFICIAL_ROOT = "https://nomads.ncep.noaa.gov"
-DEFAULT_VARIABLES = ("TMP", "UGRD", "VGRD", "OROG")
+DEFAULT_VARIABLES = ("TMP", "UGRD", "VGRD", "OROG", "VIS", "APCP")
 DEFAULT_MESSAGES = (
     ("HGT", "surface"),
     ("TMP", "2 m above ground"),
     ("UGRD", "10 m above ground"),
     ("VGRD", "10 m above ground"),
+    ("VIS", "surface"),
+    ("APCP", "surface"),
 )
 
 
@@ -116,13 +118,8 @@ class GfsNcepConnector:  # pylint: disable=too-few-public-methods
             "url": url,
             "index_url": index_url,
             "format": "GRIB2",
-            "variables": ["orog", "2t", "10u", "10v"],
-            "messages": [
-                ["orog", "surface"],
-                ["2t", "2 m above ground"],
-                ["10u", "10 m above ground"],
-                ["10v", "10 m above ground"],
-            ],
+            "variables": ["HGT", "TMP", "UGRD", "VGRD", "VIS", "APCP"],
+            "messages": [list(item) for item in DEFAULT_MESSAGES],
             "requested_coordinate": [27.9881, 86.9250],
             "size_bytes": len(payload),
             "sha256": digest,

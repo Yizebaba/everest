@@ -8,14 +8,16 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from sentinel2 import (
+from services.satellite.sentinel2 import (
     RgbScene,
     Sentinel2Scene,
     build_rgb,
     summarize,
     write_png,
 )
-from sentinel2.connector import _scale_uint8  # type: ignore[attr-defined]
+from services.satellite.sentinel2.connector import (  # type: ignore[attr-defined]
+    _scale_uint8,
+)
 
 _AOI_BOUNDS = (86.8, 27.85, 87.05, 28.05)
 
@@ -60,7 +62,8 @@ def test_build_rgb_structure_and_hash(monkeypatch) -> None:
         return fake
 
     monkeypatch.setattr(
-        "sentinel2.connector._read_band_window", _fake_read_band
+        "services.satellite.sentinel2.connector._read_band_window",
+        _fake_read_band,
     )
     rgb = build_rgb(scene, _AOI_BOUNDS, (4, 4))
     assert isinstance(rgb, RgbScene)

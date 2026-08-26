@@ -108,6 +108,13 @@ export function summitBasisRecord<
     return null;
   }
   const sorted = [...within].sort((a, b) => {
+    // Prefer the freshest record for the decision basis; distance is a
+    // tie-break only when two records share the same timestamp.
+    const timeA = (a as { timestamp?: string }).timestamp;
+    const timeB = (b as { timestamp?: string }).timestamp;
+    if (timeA !== undefined && timeB !== undefined && timeA !== timeB) {
+      return timeA < timeB ? 1 : -1;
+    }
     const distanceA = vincentyDistanceMeters(
       a.latitude,
       a.longitude,
@@ -126,4 +133,93 @@ export function summitBasisRecord<
     return b.altitude - a.altitude;
   });
   return sorted[0];
+}
+
+// Oxygen fraction relative to sea level as a standard elevation proxy
+// (barometric formula), e.g. ~50% at ~5,500 m and ~33% at ~8,800 m.
+// This is an engineering approximation for display ("est."), never a
+// provider-reported value.
+export function oxygenFractionAtAltitude(altitudeMeters: number): number {
+  const seaLevelPressure = 1013.25;
+  const scaleHeight = 8434.5;
+  const seaLevelOxygen = 0.2095;
+  return (
+    (seaLevelOxygen *
+      seaLevelPressure *
+      Math.exp(-altitudeMeters / scaleHeight)) /
+    seaLevelOxygen /
+    seaLevelPressure
+  );
+}
+
+// Expresses a meteorological wind direction (0-360 degrees, where 0 = north
+// and the value is the direction FROM which the wind blows) as a unit vector
+// pointing in the direction the wind travels TOWARD.
+export function windVector(directionDegrees: number): { x: number; y: number } {
+  const radians = ((directionDegrees + 180) * Math.PI) / 180;
+  return { x: Math.sin(radians), y: Math.cos(radians) };
+}
+
+const COMPASS_POINTS = [
+  "N",
+  "NNE",
+  "NE",
+  "ENE",
+  "E",
+  "ESE",
+  "SE",
+  "SSE",
+  "S",
+  "SSW",
+  "SW",
+  "WSW",
+  "W",
+  "WNW",
+  "NW",
+  "NNW",
+] as const;
+
+// Names the bearing a wind blows FROM as one of the sixteen compass points, so a
+// text readout can say "SSE" instead of leaving the reader to convert 157
+// degrees. Out-of-range and negative bearings are wrapped rather than rejected;
+// a provider reporting 360 means north, not an error.
+export function compassPoint(directionDegrees: number): string {
+  const wrapped = ((directionDegrees % 360) + 360) % 360;
+  return COMPASS_POINTS[Math.round(wrapped / 22.5) % 16];
+}
+
+// Metres per degree of latitude. A degree of longitude spans this multiplied by
+// cos(latitude), which at Everest's 28 degN is about 0.88 of it.
+export const METERS_PER_DEGREE_LATITUDE = 111320;
+
+// Converts a local east/north offset in metres into degree offsets at a given
+// latitude. Dividing an eastward offset by the latitude figure alone (the
+// scene's earlier shortcut) understates it by the cos(latitude) factor, which
+// both rotated drawn wind vectors away from their reported bearing and made
+// terrain slope probes sample a shorter run than the arctangent assumed.
+export function metersToDegrees(
+  latitude: number,
+  eastMeters: number,
+  northMeters: number,
+): { deltaLongitude: number; deltaLatitude: number } {
+  const scale = Math.cos(radians(latitude));
+  return {
+    // At a pole a metre east spans no finite number of degrees; report no
+    // offset rather than an unbounded one that would propagate into a position.
+    // The comparison needs a tolerance because cos(radians(90)) evaluates to
+    // ~6e-17 rather than to zero, which would otherwise pass a plain !== 0 test
+    // and yield an offset of ~10^14 degrees.
+    deltaLongitude:
+      Math.abs(scale) < 1e-12
+        ? 0
+        : eastMeters / (METERS_PER_DEGREE_LATITUDE * scale),
+    deltaLatitude: northMeters / METERS_PER_DEGREE_LATITUDE,
+  };
+}
+
+// Terrain steepness over a horizontal run, as a positive angle in degrees.
+// Direction is not preserved: an ascent and a descent of the same gradient are
+// equally steep to climb across.
+export function slopeDegrees(riseMeters: number, runMeters: number): number {
+  return (Math.atan2(Math.abs(riseMeters), runMeters) * 180) / Math.PI;
 }

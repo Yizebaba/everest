@@ -25,6 +25,7 @@ EXPECTED_UNITS = {
     "apcp": "kg m**-2",
     "hgt": "gpm",
     "orog": "m",
+    "vis": "m",
 }
 
 
@@ -44,11 +45,16 @@ def normalize_messages(
     flags: set[str] = set()
     for message in messages:
         parameter = message.parameter.lower()
+        # ecCodes reports GFS APCP as shortName "tp" and HGT as "gh"; without
+        # these two entries the precipitation and geopotential-height branches
+        # below were unreachable and precipitation was always None.
         parameter = {
             "2t": "tmp",
             "10u": "ugrd",
             "10v": "vgrd",
             "orog": "orog",
+            "tp": "apcp",
+            "gh": "hgt",
         }.get(parameter, parameter)
         if (
             parameter in EXPECTED_UNITS
@@ -65,7 +71,7 @@ def normalize_messages(
     )
     direction = (
         (math.degrees(math.atan2(-u_wind, -v_wind)) + 360) % 360
-        if speed
+        if speed is not None
         else None
     )
     record = WeatherRecord(
@@ -73,14 +79,12 @@ def normalize_messages(
         timestamp=anchor.valid_time.astimezone(timezone.utc),
         latitude=anchor.latitudes[index],
         longitude=anchor.longitudes[index],
-        altitude=(
-            values["hgt"] if "hgt" in values else values.get("orog", math.nan)
-        ),
+        altitude=(values["hgt"] if "hgt" in values else values.get("orog", math.nan)),
         wind_speed=speed,
         wind_direction=direction,
         temperature=values["tmp"] - 273.15 if "tmp" in values else None,
         precipitation=values["apcp"] if "apcp" in values else None,
-        visibility=None,
+        visibility=values["vis"] if "vis" in values else None,
         source="noaa-gfs",
         model="GFS",
         forecast=ForecastIdentity(

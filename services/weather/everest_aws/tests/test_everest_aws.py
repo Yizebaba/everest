@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from everest_aws.connector import StationFeed, download_station
-from everest_aws.parser import parse_rows
-from everest_aws.qc import run_qc
+from services.weather.everest_aws.connector import (
+    StationFeed,
+    download_station,
+)
+from services.weather.everest_aws.parser import parse_rows
+from services.weather.everest_aws.qc import run_qc
 
 BASE_CAMP_CSV = (
     "Time (NPT),Temperature (Celsius),Relative Humidity,col3,col4,col5,"

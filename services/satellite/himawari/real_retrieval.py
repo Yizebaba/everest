@@ -6,7 +6,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from himawari import (
+from services.satellite.himawari import (
     download_segment,
     latest_ten_minute_slot,
     parse_segment,

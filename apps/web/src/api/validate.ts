@@ -329,6 +329,37 @@ export function validateSatellite(payload: unknown): SatelliteResponse {
   return { segments: body.segments as SatelliteResponse["segments"] };
 }
 
+function validateCamp(value: unknown): EverestRouteResponse["camps"][number] {
+  if (typeof value !== "object" || value === null) {
+    throw new Error("camp must be an object");
+  }
+  const camp = value as Record<string, unknown>;
+  if (typeof camp.name !== "string" || camp.name.length === 0) {
+    throw new Error("camp name invalid");
+  }
+  if (
+    !isFiniteNumber(camp.latitude) ||
+    camp.latitude < -90 ||
+    camp.latitude > 90 ||
+    !isFiniteNumber(camp.longitude) ||
+    camp.longitude < -180 ||
+    camp.longitude > 180
+  ) {
+    throw new Error("camp coordinate invalid");
+  }
+  validateOptionalNumber(camp, "elevation_m");
+  for (const key of ["osm_ref"] as const) {
+    if (
+      camp[key] !== undefined &&
+      camp[key] !== null &&
+      typeof camp[key] !== "string"
+    ) {
+      throw new Error(`${key} invalid`);
+    }
+  }
+  return camp as unknown as EverestRouteResponse["camps"][number];
+}
+
 export function validateEverestRoute(payload: unknown): EverestRouteResponse {
   const body = payload as Record<string, unknown>;
   if (typeof body.source_id !== "string" || body.source_id.length === 0) {
@@ -340,36 +371,7 @@ export function validateEverestRoute(payload: unknown): EverestRouteResponse {
   if (!Array.isArray(body.camps)) {
     throw new Error("camps must be an array");
   }
-  const camps = body.camps.map((value): EverestRouteResponse["camps"][number] => {
-    if (typeof value !== "object" || value === null) {
-      throw new Error("camp must be an object");
-    }
-    const camp = value as Record<string, unknown>;
-    if (typeof camp.name !== "string" || camp.name.length === 0) {
-      throw new Error("camp name invalid");
-    }
-    if (
-      !isFiniteNumber(camp.latitude) ||
-      camp.latitude < -90 ||
-      camp.latitude > 90 ||
-      !isFiniteNumber(camp.longitude) ||
-      camp.longitude < -180 ||
-      camp.longitude > 180
-    ) {
-      throw new Error("camp coordinate invalid");
-    }
-    validateOptionalNumber(camp, "elevation_m");
-    for (const key of ["osm_ref"] as const) {
-      if (
-        camp[key] !== undefined &&
-        camp[key] !== null &&
-        typeof camp[key] !== "string"
-      ) {
-        throw new Error(`${key} invalid`);
-      }
-    }
-    return camp as unknown as EverestRouteResponse["camps"][number];
-  });
+  const camps = body.camps.map(validateCamp);
   if (!Array.isArray(body.route)) {
     throw new Error("route must be an array");
   }
@@ -393,6 +395,12 @@ export function validateEverestRoute(payload: unknown): EverestRouteResponse {
     dataset: body.dataset,
     camps,
     route,
+    // Absent or null means the OSM peak node has not been ingested; the caller
+    // must leave the summit unmarked rather than assume a height for it.
+    summit:
+      body.summit === undefined || body.summit === null
+        ? null
+        : validateCamp(body.summit),
   };
 }
 

@@ -59,7 +59,22 @@ def parse_grib_bytes(payload: bytes) -> tuple[ParsedMessage, ...]:
     messages: list[ParsedMessage] = []
     with _temporary_grib(payload) as path:
         with path.open("rb") as stream:
-            while handle := codes_grib_new_from_file(stream):
+            while True:
+                try:
+                    handle = codes_grib_new_from_file(stream)
+                except (ValueError, RuntimeError):
+                    # Already the contract's error type: keep the message.
+                    raise
+                except Exception as error:  # pylint: disable=broad-except
+                    # ecCodes raises platform-specific errors (e.g.
+                    # PrematureEndOfFileError) for bytes that are not a GRIB
+                    # stream. Translate them so callers see the contract's
+                    # ValueError instead of a gribapi internal error.
+                    raise ValueError(
+                        "payload is not a readable GRIB2 stream"
+                    ) from error
+                if handle is None:
+                    break
                 try:
                     cycle = datetime.strptime(
                         f'{int(codes_get(handle, "dataDate")):08d}'

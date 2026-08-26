@@ -6,7 +6,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from sentinel2 import (
+from services.satellite.sentinel2 import (
     Sentinel2Scene,
     build_rgb,
     summarize,

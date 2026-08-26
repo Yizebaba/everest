@@ -1,6 +1,6 @@
 """Himawari satellite package (EV-SAT-001, meteorology + gis-3d owned)."""
 
-from .connector import (
+from services.satellite.himawari.connector import (
     FlDkTimeSlot,
     download_segment,
     latest_ten_minute_slot,
@@ -8,8 +8,8 @@ from .connector import (
     segment_url,
     sha256_of,
 )
-from .parser import SegmentInfo, parse_segment
-from .qc import HimawariQcReport, run_qc
+from services.satellite.himawari.parser import SegmentInfo, parse_segment
+from services.satellite.himawari.qc import HimawariQcReport, run_qc
 
 __all__ = [
     "FlDkTimeSlot",

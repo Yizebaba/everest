@@ -9,9 +9,9 @@ from rasterio.crs import CRS
 from rasterio.io import MemoryFile
 from rasterio.transform import from_origin
 
-from terrain.connector import tile_for_lat_lon
-from terrain.parser import parse_tile
-from terrain.qc import run_qc
+from services.terrain.connector import tile_for_lat_lon
+from services.terrain.parser import parse_tile
+from services.terrain.qc import run_qc
 
 
 def _synthetic_tile(tmp_path, elevation: np.ndarray, crs="EPSG:4326") -> str:

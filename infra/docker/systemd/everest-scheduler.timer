@@ -2,7 +2,12 @@
 Description=Everest forecast scheduler (6-hourly)
 
 [Timer]
-OnCalendar=*-*-* 00,06,12,18:00:00 UTC
+# Phased 8 h after each IFS cycle time, not at the cycle time itself. ECMWF Open
+# Data publishes a cycle roughly 6-8 h late (the 2026-08-25 18z index carried
+# Last-Modified 2026-08-26 00:27 UTC), so firing at 00/06/12/18 always found the
+# two newest cycles missing and fell back to cycle-12h, leaving served data
+# ~14 h stale.
+OnCalendar=*-*-* 02,08,14,20:00:00 UTC
 Persistent=true
 RandomizedDelaySec=300
 

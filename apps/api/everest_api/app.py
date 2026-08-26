@@ -218,10 +218,17 @@ def create_app(
                 "temperature": item.temperature,
                 "precipitation": item.precipitation,
                 "visibility": item.visibility,
+                "pressure": item.pressure,
                 "source": item.source_id,
                 "model": item.model,
                 "forecast_cycle": (_utc_z(item.forecast_cycle)),
                 "forecast_lead_time": item.forecast_lead_seconds,
+                # The camp or summit this record was interpolated to. It is the
+                # same label callers already filter on via ?profile= and that the
+                # profile route echoes, so withholding it from the record left
+                # the client unable to tell which height a row described once
+                # rows for several profiles were mixed in one response.
+                "route_profile": item.route_profile,
                 "quality_flags": item.quality_flags,
             }
             for item in records
@@ -413,11 +420,28 @@ def create_app(
             for row in rows
             if row.feature_kind == "route"
         ]
+        summit = next(
+            (
+                {
+                    "name": row.name,
+                    "latitude": row.latitude,
+                    "longitude": row.longitude,
+                    "elevation_m": row.elevation_m,
+                    "osm_ref": row.osm_ref,
+                }
+                for row in rows
+                if row.feature_kind == "summit"
+            ),
+            None,
+        )
         return {
             "source_id": "osm-overpass",
             "dataset": "osm-south-col",
             "camps": camps,
             "route": route,
+            # Null until the OSM peak node has been ingested; the scene must not
+            # substitute a hard-coded 8848 m marker when it is absent.
+            "summit": summit,
         }
 
     @app.get("/api/observations/current")

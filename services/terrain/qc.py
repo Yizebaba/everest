@@ -7,7 +7,7 @@ from typing import Sequence
 
 import numpy as np
 
-from terrain.parser import ParsedTile
+from services.terrain.parser import ParsedTile
 
 
 @dataclass(frozen=True)

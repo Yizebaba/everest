@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-import os
 import sys
 from pathlib import Path
 
@@ -40,8 +39,9 @@ NOW = datetime.now(_UTC)
 
 
 def db_url() -> str:
-    pw = os.environ["EVEREST_DB_PASSWORD"]
-    return f"postgresql+psycopg://everest:{pw}@127.0.0.1:56021/everest"
+    from everest_api.persistence.database import resolve_database_url
+
+    return resolve_database_url()
 
 
 def ingest_terrain(session: Session) -> None:

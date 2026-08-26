@@ -79,4 +79,53 @@ describe("validateEverestRoute", () => {
     };
     expect(() => validateEverestRoute(payload)).toThrow("source_id invalid");
   });
+
+  it("keeps the summit when the peak node is present", () => {
+    const payload = {
+      source_id: "osm-overpass",
+      dataset: "osm-south-col",
+      camps: [],
+      route: [],
+      summit: {
+        name: "Summit",
+        latitude: 27.9880614,
+        longitude: 86.92521,
+        elevation_m: 8848.86,
+        osm_ref: "164979149",
+      },
+    };
+    const result = validateEverestRoute(payload);
+    expect(result.summit?.elevation_m).toBe(8848.86);
+    expect(result.summit?.osm_ref).toBe("164979149");
+  });
+
+  it("returns a null summit when the peak node is absent", () => {
+    const base = {
+      source_id: "osm-overpass",
+      dataset: "osm-south-col",
+      camps: [],
+      route: [],
+    };
+    expect(validateEverestRoute(base).summit).toBeNull();
+    expect(validateEverestRoute({ ...base, summit: null }).summit).toBeNull();
+  });
+
+  it("rejects a summit with an out-of-range coordinate", () => {
+    const payload = {
+      source_id: "osm-overpass",
+      dataset: "osm-south-col",
+      camps: [],
+      route: [],
+      summit: {
+        name: "Summit",
+        latitude: 127.9880614,
+        longitude: 86.92521,
+        elevation_m: 8848.86,
+        osm_ref: "164979149",
+      },
+    };
+    expect(() => validateEverestRoute(payload)).toThrow(
+      "camp coordinate invalid",
+    );
+  });
 });

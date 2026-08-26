@@ -31,6 +31,8 @@ class OsmFeatureService:
         self,
         camps: list[tuple[str | None, float, float, float | None, str | None]],
         route: list[tuple[float, float]],
+        summit: tuple[str | None, float, float, float | None, str | None]
+        | None = None,
         *,
         retrieved_at: datetime | None = None,
     ) -> int:
@@ -38,7 +40,9 @@ class OsmFeatureService:
 
         ``camps`` items are ``(name, latitude, longitude, elevation_m,
         osm_ref)``. ``route`` items are ``(latitude, longitude)`` vertices in
-        travel order. Returns the number of rows persisted.
+        travel order. ``summit`` is the same tuple shape as a camp and is stored
+        under its own ``summit`` kind so consumers can tell the 8848.86 m peak
+        apart from a camp. Returns the number of rows persisted.
         """
         timestamp = retrieved_at or datetime.now(UTC)
         rows = [
@@ -58,6 +62,22 @@ class OsmFeatureService:
                 enumerate(camps)
             )
         ]
+        if summit is not None:
+            name, latitude, longitude, elevation_m, osm_ref = summit
+            rows.append(
+                OsmFeatureModel(
+                    source_id=SOURCE_ID,
+                    dataset=DATASET,
+                    feature_kind="summit",
+                    name=name,
+                    sequence=0,
+                    latitude=latitude,
+                    longitude=longitude,
+                    elevation_m=elevation_m,
+                    osm_ref=osm_ref,
+                    retrieved_at=timestamp,
+                )
+            )
         rows.extend(
             OsmFeatureModel(
                 source_id=SOURCE_ID,

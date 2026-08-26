@@ -18,7 +18,7 @@ from tempfile import NamedTemporaryFile
 # GRIB decoding dataclasses carry many schema fields and locals by design.
 # pylint: disable=too-many-instance-attributes,too-many-locals
 
-LEVELS_DEFAULT = ("850", "700", "500", "300")
+LEVELS_DEFAULT = ("850", "700", "600", "500", "400", "300")
 PARAMS = ("u", "v", "t", "gh")
 G = 9.80665
 
@@ -49,6 +49,13 @@ class PressureLevelRecord:
     temperature_c: float
     wind_speed: float
     wind_direction: float
+    # The signed components are retained alongside speed/direction so a vertical
+    # interpolation between levels can average vectors; averaging bearings in
+    # degrees would turn 350 deg and 10 deg into a southerly wind.
+    u_wind: float = math.nan
+    v_wind: float = math.nan
+    latitude: float = math.nan
+    longitude: float = math.nan
     source: str = "ecmwf-ifs"
     model: str = "IFS"
 
@@ -70,7 +77,19 @@ def parse_pressure_messages(
         temporary.flush()
         with open(temporary.name, "rb") as stream:
             while True:
-                handle = codes_grib_new_from_file(stream)
+                try:
+                    handle = codes_grib_new_from_file(stream)
+                except (ValueError, RuntimeError):
+                    # Already the contract's error type: keep the message.
+                    raise
+                except Exception as error:  # pylint: disable=broad-except
+                    # ecCodes raises platform-specific errors (e.g.
+                    # PrematureEndOfFileError) for bytes that are not a GRIB
+                    # stream. Translate them so callers see the contract's
+                    # ValueError instead of a gribapi internal error.
+                    raise ValueError(
+                        "payload is not a readable GRIB2 stream"
+                    ) from error
                 if handle is None:
                     break
                 try:
@@ -129,12 +148,6 @@ def normalize_pressure_levels(
     by_level: dict[str, dict[str, ParsedPressureMessage]] = {}
     for msg in messages:
         by_level.setdefault(msg.level_hpa, {})[msg.parameter] = msg
-    anchor: ParsedPressureMessage | None = None
-    for msg in messages:
-        if anchor is None or msg.valid_time > anchor.valid_time:
-            anchor = msg
-    if anchor is None:
-        raise ValueError("no parsed messages")
 
     records: list[PressureLevelRecord] = []
     for lvl in levels:
@@ -145,6 +158,8 @@ def normalize_pressure_levels(
         gh = group.get("gh")
         if u is None or v is None or t is None or gh is None:
             continue  # incomplete level is skipped, never fabricated
+        if len({m.valid_time for m in (u, v, t, gh)}) != 1:
+            continue  # mixed lead times at one level would falsify the record
         idx = _nearest_index(u.latitudes, u.longitudes, latitude, longitude)
         altitude = float(gh.values[idx])  # geopotential height (gpm ~ metres)
         temperature_c = float(t.values[idx]) - 273.15
@@ -152,17 +167,21 @@ def normalize_pressure_levels(
         v_wind = float(v.values[idx])
         speed = math.hypot(u_wind, v_wind)
         direction = (math.degrees(math.atan2(-u_wind, -v_wind)) + 360) % 360
-        lead_seconds = int((anchor.valid_time - anchor.cycle).total_seconds())
+        lead_seconds = int((u.valid_time - u.cycle).total_seconds())
         records.append(
             PressureLevelRecord(
                 level_hpa=lvl,
-                timestamp=anchor.valid_time.astimezone(UTC),
-                cycle=anchor.cycle.astimezone(UTC),
+                timestamp=u.valid_time.astimezone(UTC),
+                cycle=u.cycle.astimezone(UTC),
                 lead_seconds=lead_seconds,
                 altitude=altitude,
                 temperature_c=temperature_c,
                 wind_speed=speed,
                 wind_direction=direction,
+                u_wind=u_wind,
+                v_wind=v_wind,
+                latitude=float(u.latitudes[idx]),
+                longitude=float(u.longitudes[idx]),
             )
         )
     return records

@@ -6,7 +6,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from terrain import (
+from services.terrain import (
     download_tile,
     parse_tile,
     run_qc,

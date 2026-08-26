@@ -17,7 +17,7 @@ const csp = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-eval' 'unsafe-inline'",
   "style-src 'self' 'unsafe-inline'",
-  "connect-src 'self' http://localhost:52147 http://192.168.1.11:52147 https://tile.openstreetmap.org https://api.cesium.com https://assets.cesium.com https://assets.ion.cesium.com http://*.virtualearth.net https://*.virtualearth.net",
+  "connect-src 'self' http://127.0.0.1:52147 http://localhost:52147 http://192.168.1.11:52147 https://tile.openstreetmap.org https://api.cesium.com https://assets.cesium.com https://assets.ion.cesium.com http://*.virtualearth.net https://*.virtualearth.net",
   "img-src 'self' data: http: https:",
   "font-src 'self'",
   "worker-src 'self' blob:",

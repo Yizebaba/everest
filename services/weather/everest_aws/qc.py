@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Sequence
 
-from everest_aws.parser import AwsObservationRow
+from services.weather.everest_aws.parser import AwsObservationRow
 
 
 @dataclass(frozen=True)

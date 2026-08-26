@@ -8,12 +8,12 @@ from unittest.mock import patch
 
 import pytest
 
-from himawari.connector import (
+from services.satellite.himawari.connector import (
     FlDkTimeSlot,
     segment_filename,
 )
-from himawari.parser import parse_segment
-from himawari.qc import run_qc
+from services.satellite.himawari.parser import parse_segment
+from services.satellite.himawari.qc import run_qc
 
 
 def _synthetic_segment(tmp_path, satellite: bytes, area: bytes) -> str:

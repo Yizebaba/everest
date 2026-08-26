@@ -7,4 +7,9 @@ Type=oneshot
 WorkingDirectory=/mnt/d/Everest/apps/api
 EnvironmentFile=/root/.everest/db.env
 Environment=PYTHONPATH=/mnt/d/Everest:/mnt/d/Everest/apps/api:/mnt/d/Everest/packages/weather_ingestion_contract
+Environment=EVEREST_DB_HOST=127.0.0.1
+# Without this, Python block-buffers stdout into the journal pipe and a run that
+# takes 20 min logs nothing until it exits, so a stuck ingest is
+# indistinguishable from a slow one.
+Environment=PYTHONUNBUFFERED=1
 ExecStart=/usr/bin/python3 schedule_forecast.py

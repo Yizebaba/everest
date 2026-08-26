@@ -34,6 +34,13 @@ def normalize_messages(
     if not messages:
         raise ValueError("at least one parsed message is required")
     anchor = max(messages, key=lambda message: message.valid_time)
+    if any(
+        len(message.values) != len(anchor.values)
+        or message.latitudes[:1] != anchor.latitudes[:1]
+        for message in messages
+    ):
+        # One flat index is used for every message, so they must share a grid.
+        raise ValueError("IFS messages do not share a single grid")
     index = min(
         range(len(anchor.values)),
         key=lambda item: (anchor.latitudes[item] - latitude) ** 2
@@ -76,12 +83,21 @@ def _values_and_unit_flags(
 ) -> tuple[dict[str, float], set[str]]:
     """Return raw values and invalid-unit flags without guessing units."""
     values: dict[str, float] = {}
+    levels: dict[str, str] = {}
     flags: set[str] = set()
     for message in messages:
         expected = _EXPECTED_UNITS.get(message.parameter)
         if expected is not None and message.units != expected:
             flags.add(QualityFlag.INVALID_UNIT.value)
             continue
+        seen_level = levels.get(message.parameter)
+        if seen_level is not None and seen_level != message.level_type:
+            # The same shortName at two level types (surface z vs pressure-level
+            # z) used to overwrite silently, so an altitude could come from a
+            # level the caller never asked for. Keep the first and say so.
+            flags.add(QualityFlag.PROVENANCE_ERROR.value)
+            continue
+        levels[message.parameter] = message.level_type
         values[message.parameter] = message.values[index]
     return values, flags
 
@@ -107,6 +123,6 @@ def _wind_direction(
     speed: float | None,
 ) -> float | None:
     """Convert east/north vector components into true-north wind direction."""
-    if u_wind is None or v_wind is None or not speed:
+    if u_wind is None or v_wind is None or speed is None:
         return None
     return (math.degrees(math.atan2(-u_wind, -v_wind)) + 360) % 360

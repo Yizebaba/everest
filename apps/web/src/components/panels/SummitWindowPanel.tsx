@@ -38,9 +38,15 @@ export function scoreSummitRecord(
 }
 
 function isClean(record: CanonicalWeatherRecord): boolean {
-  return (
-    record.quality_flags.length > 0 &&
-    record.quality_flags.every((flag) => flag === "clean")
+  if (record.quality_flags.length === 0) {
+    return false;
+  }
+  // `missing_value` records a field the provider does not publish (e.g. IFS
+  // open data has no visibility); it should not block the wind-based decision.
+  // Any other flag (invalid unit/coordinate/timestamp, out_of_range,
+  // provenance error, cycle mismatch) is treated as disqualifying.
+  return record.quality_flags.every(
+    (flag) => flag === "clean" || flag === "missing_value",
   );
 }
 

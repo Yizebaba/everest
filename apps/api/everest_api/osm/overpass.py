@@ -10,6 +10,7 @@ by ``OsmFeatureService.sync``. No credentials are required.
 from __future__ import annotations
 
 import json
+import time
 import urllib.parse
 import urllib.request
 from collections.abc import Callable, Sequence
@@ -42,6 +43,27 @@ SOUTH_COL_CAMPS = frozenset(
 
 _USER_AGENT = "Everest/0.1 (local demo; research use only)"
 
+#: Everest summit node (OSM ``natural=peak``, wikidata Q513). Its ``ele`` tag
+#: carries the 2020 China/Nepal joint survey height of 8848.86 m.
+SUMMIT_NODE_ID = 164979149
+
+
+def _elevation(tags: dict[str, object]) -> float | None:
+    """Return the OSM ``ele`` tag in metres, or None when it is absent/unusable.
+
+    Every South Col camp node and the summit peak publish ``ele``; discarding it
+    left ``elevation_m`` NULL for all of them, which the 3D scene then drew at
+    sea level. A tag that is not a plain number is dropped rather than guessed.
+    """
+    raw = tags.get("ele")
+    if raw is None:
+        return None
+    try:
+        return float(str(raw).strip())
+    except ValueError:
+        return None
+
+
 
 def _post_query(endpoint: str, query: str, timeout: float = 45.0) -> dict[str, object]:
     """POST one Overpass QL query and return the decoded JSON envelope."""
@@ -56,14 +78,27 @@ def _post_query(endpoint: str, query: str, timeout: float = 45.0) -> dict[str, o
     return json.loads(payload.decode("utf-8"))
 
 
-def _run_query(query: str, timeout: float = 45.0) -> dict[str, object]:
-    """Try Overpass mirrors in order and raise the first non-transient error."""
+def _run_query(
+    query: str,
+    timeout: float = 45.0,
+    attempts: int = 3,
+    sleep: Callable[[float], None] = time.sleep,
+) -> dict[str, object]:
+    """Try Overpass mirrors, with backoff, and raise the last error.
+
+    The public mirrors answer 502 or time out when they are busy, which used to
+    abort the whole snapshot refresh on the first bad response. Each attempt
+    walks every mirror before waiting.
+    """
     last_error: Exception | None = None
-    for endpoint in OVERPASS_ENDPOINTS:
-        try:
-            return _post_query(endpoint, query, timeout)
-        except Exception as error:  # pylint: disable=broad-exception-caught
-            last_error = error
+    for attempt in range(attempts):
+        for endpoint in OVERPASS_ENDPOINTS:
+            try:
+                return _post_query(endpoint, query, timeout)
+            except Exception as error:  # pylint: disable=broad-exception-caught
+                last_error = error
+        if attempt + 1 < attempts:
+            sleep(15.0 * (attempt + 1))
     assert last_error is not None
     raise RuntimeError(f"Overpass query failed: {last_error}")
 
@@ -91,10 +126,43 @@ def fetch_camps() -> list[dict[str, object]]:
                 "name": str(name),
                 "latitude": float(element.get("lat", 0.0)),
                 "longitude": float(element.get("lon", 0.0)),
+                "elevation_m": _elevation(tags),
             }
         )
-    camps.sort(key=lambda camp: str(camp["name"]))
+    # Ordered by height, which is the order the route is climbed. Sorting by
+    # name put "Everest Base Camp" after "Camp 4S", so the persisted sequence
+    # ran EBC last and any consumer trusting it drew the route backwards.
+    camps.sort(
+        key=lambda camp: (
+            camp["elevation_m"] is None,
+            camp["elevation_m"] or 0.0,
+            str(camp["name"]),
+        )
+    )
     return camps
+
+
+def fetch_summit() -> dict[str, object] | None:
+    """Return the Everest summit peak node, or None if OSM does not serve it."""
+    query = f"[out:json][timeout:30];node({SUMMIT_NODE_ID});out body;"
+    envelope = _run_query(query)
+    for element in envelope.get("elements", []):
+        if str(element.get("id")) != str(SUMMIT_NODE_ID):
+            continue
+        tags = element.get("tags") or {}
+        elevation = _elevation(tags)
+        if elevation is None:
+            # A summit without a height cannot anchor a vertical profile, and
+            # inventing 8848 m here would launder a constant as OSM data.
+            return None
+        return {
+            "osm_id": str(element.get("id", "")),
+            "name": "Summit",
+            "latitude": float(element.get("lat", 0.0)),
+            "longitude": float(element.get("lon", 0.0)),
+            "elevation_m": elevation,
+        }
+    return None
 
 
 def fetch_route_vertices() -> list[tuple[float, float]]:
@@ -158,7 +226,11 @@ def normalize_camps(camps: Sequence[dict[str, object]]) -> list[tuple]:
             str(item["name"]),
             float(item["latitude"]),
             float(item["longitude"]),
-            None,
+            (
+                None
+                if item.get("elevation_m") is None
+                else float(item["elevation_m"])  # type: ignore[arg-type]
+            ),
             str(item["osm_id"]),
         )
         for item in camps
@@ -170,7 +242,9 @@ __all__ = [
     "SOUTH_COL_BBOX",
     "SOUTH_COL_CAMPS",
     "SOUTH_COL_RELATION_ID",
+    "SUMMIT_NODE_ID",
     "fetch_camps",
     "fetch_route_vertices",
+    "fetch_summit",
     "normalize_camps",
 ]

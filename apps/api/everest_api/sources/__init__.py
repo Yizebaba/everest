@@ -1,7 +1,11 @@
 """Canonical source models for terrain, observations, and satellite (ADR-019)."""
 
-from .models import AwsObservationModel, SatelliteSegmentModel, TerrainTileModel
-from .normalizers import (
+from everest_api.sources.models import (
+    AwsObservationModel,
+    SatelliteSegmentModel,
+    TerrainTileModel,
+)
+from everest_api.sources.normalizers import (
     CanonicalAwsObservation,
     CanonicalSatelliteSegment,
     CanonicalTerrainTile,

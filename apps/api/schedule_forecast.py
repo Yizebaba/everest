@@ -27,6 +27,12 @@ from sqlalchemy.orm import sessionmaker  # noqa: E402
 from everest_api.raw_storage import RawStoragePolicy  # noqa: E402
 from everest_api.registry.models import DataSourceRegistryModel  # noqa: E402
 from everest_api.weather.service import WeatherIngestionService  # noqa: E402
+from services.weather.contract import (  # noqa: E402
+    ForecastIdentity,
+    RecordType,
+    WeatherRecord,
+    validate_record,
+)
 from services.weather.ecmwf import (  # noqa: E402
     EcmwfOpenDataConnector,
     normalize_messages as normalize_ifs,
@@ -35,6 +41,10 @@ from services.weather.ecmwf import (  # noqa: E402
 from services.weather.ecmwf.pressure import (  # noqa: E402
     normalize_pressure_levels,
     parse_pressure_messages,
+)
+from services.weather.route_profile import (  # noqa: E402
+    ROUTE_PROFILE_ELEVATIONS,
+    interpolate_route_profiles,
 )
 from weather_ingestion_contract import (  # noqa: E402
     CanonicalRecordInput,
@@ -45,14 +55,21 @@ LAT = 27.98806
 LON = 86.92528
 RAW_ROOT = Path("/tmp/everest-schedule-raw")
 LEADS_IFS = list(range(0, 73, 3))  # 3h steps
-PRESSURE_LEVELS = ("850", "700", "500", "300")
+# 400 hPa (~7600 m) and 300 hPa (~9800 m) bracket the 8848 m summit, so the
+# summit level can be interpolated instead of guessed; 850-500 cover the route
+# from the valley up through Camp 3.
+PRESSURE_LEVELS = ("850", "700", "600", "500", "400", "300")
+# Pressure levels are fetched at 6h steps rather than every surface lead: one
+# lead costs ~15 MB of byte-range downloads, and a 6h vertical cadence is enough
+# to resolve a summit window.
+PRESSURE_LEADS = tuple(range(0, 73, 6))
 
 
 def _env_db_url() -> str:
-    import os
+    """Resolve the same database URL the API reads, from one shared resolver."""
+    from everest_api.persistence.database import resolve_database_url
 
-    pw = os.environ["EVEREST_DB_PASSWORD"]
-    return f"postgresql+psycopg://everest:{pw}@127.0.0.1:56021/everest"
+    return resolve_database_url()
 
 
 def _seed(session) -> None:
@@ -76,22 +93,42 @@ def _seed(session) -> None:
 
 
 def _ingest_ifs(service, cycle: datetime) -> int:
+    """Ingest the near-surface IFS fields for every published lead of a cycle.
+
+    These are 10 m winds, 2 m temperature and surface precipitation over the
+    model's smoothed 0.25 deg orography (~6008 m at this grid point). They
+    describe conditions just above that ground, not free-air conditions at
+    6008 m, and never summit conditions - hence the ``:sfc`` key suffix. Summit
+    and camp-height values come from the pressure-level path.
+    """
     connector = EcmwfOpenDataConnector(RAW_ROOT)
-    zero_altitude = None
+    orography = None  # model orography is time-invariant within a cycle
     count = 0
     for lead in LEADS_IFS:
-        retrieval = connector.retrieve(cycle, lead_hours=lead)
+        try:
+            retrieval = connector.retrieve(cycle, lead_hours=lead)
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            if lead == 0:
+                raise  # no lead 0 means the cycle itself is not published
+            # A later lead the provider has not published yet must not discard
+            # the leads already ingested for this cycle.
+            print(f"  surface +{lead}h unavailable ({exc}); skipping lead")
+            continue
         payload = retrieval.payload_path.read_bytes()
         messages = parse_grib_bytes(payload)
         record = normalize_ifs(messages, LAT, LON)
         if math.isnan(record.altitude):
-            if zero_altitude is None:
+            if orography is None:
+                print(f"  surface +{lead}h has no orography yet; skipping lead")
                 continue
+            # Reuse the orography decoded at lead 0: the model's surface height
+            # does not change across leads of one cycle, so this is the same
+            # measured value rather than a substituted one.
             from dataclasses import replace
 
-            record = replace(record, altitude=zero_altitude)
+            record = replace(record, altitude=orography)
         else:
-            zero_altitude = record.altitude
+            orography = record.altitude
         descriptor = RawArtifactDescriptor(
             "ecmwf-ifs",
             "ifs-oper",
@@ -115,7 +152,7 @@ def _ingest_ifs(service, cycle: datetime) -> int:
             record.latitude,
             record.longitude,
             record.altitude,
-            f"ifs:0p25:{record.latitude:.1f}:{record.longitude:.1f}",
+            f"ifs:0p25:{record.latitude:.1f}:{record.longitude:.1f}:sfc",
             record.source,
             record.model,
             tuple(record.quality_flags),
@@ -134,18 +171,17 @@ def _ingest_ifs(service, cycle: datetime) -> int:
     return count
 
 
-def _fetch_pressure(cycle: datetime) -> bytes:
-    """Download the IFS pressure-level GRIB messages for one cycle."""
+def _fetch_pressure(cycle: datetime, lead_hours: int = 0) -> bytes:
+    """Download the IFS pressure-level GRIB messages for one cycle and lead."""
     import json
     import urllib.request
 
     stamp = cycle.strftime("%Y%m%d")
-    # lead-0 file naming: YYYYMMDDHH0000-0h-oper-fc
     base = (
         f"https://data.ecmwf.int/forecasts/{stamp}/{cycle:%H}z/ifs/0p25/oper/"
-        f"{stamp}{cycle:%H}0000-0h-oper-fc"
+        f"{stamp}{cycle:%H}0000-{lead_hours}h-oper-fc"
     )
-    with urllib.request.urlopen(base + ".index") as resp:
+    with urllib.request.urlopen(base + ".index", timeout=60) as resp:
         rows = [json.loads(l) for l in resp.read().decode().splitlines() if l]
     sel = [
         r
@@ -154,6 +190,11 @@ def _fetch_pressure(cycle: datetime) -> bytes:
         and r.get("param") in ("u", "v", "t", "gh")
         and r.get("levelist") in PRESSURE_LEVELS
     ]
+    if not sel:
+        raise RuntimeError(
+            f"pressure index for {cycle:%Y%m%d%H}z +{lead_hours}h has no "
+            "requested levels"
+        )
     sel.sort(key=lambda r: r["_offset"])
     buf = bytearray()
     for r in sel:
@@ -161,7 +202,7 @@ def _fetch_pressure(cycle: datetime) -> bytes:
         req = urllib.request.Request(
             base + ".grib2", headers={"Range": f"bytes={r['_offset']}-{end}"}
         )
-        with urllib.request.urlopen(req) as resp:
+        with urllib.request.urlopen(req, timeout=120) as resp:
             body = resp.read()
             if len(body) != r["_length"]:
                 raise RuntimeError("pressure range length mismatch")
@@ -169,59 +210,196 @@ def _fetch_pressure(cycle: datetime) -> bytes:
     return bytes(buf)
 
 
-def _ingest_ifs_pressure(service, cycle: datetime) -> int:
-    import hashlib
+def _pressure_quality_flags(record) -> tuple[str, ...]:
+    """Run the real contract validator over one pressure-level record.
 
-    payload = _fetch_pressure(cycle)
-    messages = parse_pressure_messages(payload)
-    records = normalize_pressure_levels(messages, LAT, LON, PRESSURE_LEVELS)
-    digest = hashlib.sha256(payload).hexdigest()
-    artifact_path = RAW_ROOT / "ecmwf-ifs" / digest / "pressure.grib2"
-    artifact_path.parent.mkdir(parents=True, exist_ok=True)
-    artifact_path.write_bytes(payload)
-    descriptor = RawArtifactDescriptor(
-        "ecmwf-ifs",
-        "ifs-pressure",
-        str(artifact_path),
-        digest,
-        cycle,
-        "GRIB2",
-        len(payload),
-        forecast_cycle=cycle,
-        forecast_lead_seconds=0,
-        metadata={
-            "provider_payload_sha256": digest,
-            "provider_payload_size_bytes": len(payload),
-        },
+    The pressure path used to hard-code ``("clean",)``, which stamped every
+    record as validated without ever running QC. Pressure levels carry no
+    precipitation or visibility, so the honest outcome is ``missing_value``.
+    """
+    probe = WeatherRecord(
+        record_type=RecordType.FORECAST,
+        timestamp=record.timestamp,
+        latitude=record.latitude,
+        longitude=record.longitude,
+        altitude=record.altitude,
+        wind_speed=record.wind_speed,
+        wind_direction=record.wind_direction,
+        temperature=record.temperature_c,
+        precipitation=None,
+        visibility=None,
+        source=record.source,
+        model=record.model,
+        forecast=ForecastIdentity(
+            record.cycle, timedelta(seconds=record.lead_seconds)
+        ),
     )
+    return tuple(sorted(validate_record(probe)))
+
+
+def _profile_quality_flags(
+    sample, cycle: datetime, lead_seconds: int, latitude: float, longitude: float
+) -> tuple[str, ...]:
+    """Run the contract validator over one interpolated camp-height sample."""
+    probe = WeatherRecord(
+        record_type=RecordType.FORECAST,
+        timestamp=cycle + timedelta(seconds=lead_seconds),
+        latitude=latitude,
+        longitude=longitude,
+        altitude=sample.elevation,
+        wind_speed=sample.wind_speed,
+        wind_direction=sample.wind_direction,
+        temperature=sample.temperature_c,
+        precipitation=None,
+        visibility=None,
+        source="ecmwf-ifs",
+        model="IFS",
+        pressure=sample.pressure_hpa,
+        forecast=ForecastIdentity(cycle, timedelta(seconds=lead_seconds)),
+    )
+    return tuple(sorted(validate_record(probe)))
+
+
+def _ingest_route_profiles(service, descriptor, records) -> int:
+    """Ingest one record per named camp, interpolated to its true elevation.
+
+    Without this, ``route_profile`` was NULL on every row, so
+    ``/api/weather/profile?profile=SUMMIT`` returned an empty list and the
+    vertical dimension existed in the database but not in the product. Tagging a
+    raw pressure level with a camp name instead would have misstated its height
+    by hundreds of metres, so each camp is interpolated between the two levels
+    that bracket it and the source levels are recorded in ``spatial_key``.
+    """
     count = 0
+    by_time: dict[datetime, list] = {}
     for record in records:
-        canonical = CanonicalRecordInput(
-            "forecast",
-            record.timestamp,
-            LAT,
-            LON,
-            record.altitude,
-            f"ifs:0p25:28.0:87.0:{record.level_hpa}hpa",
-            record.source,
-            record.model,
-            ("clean",),
-            wind_speed=record.wind_speed,
-            wind_direction=record.wind_direction,
-            temperature=record.temperature_c,
-            forecast_cycle=record.cycle,
-            forecast_lead_seconds=record.lead_seconds,
-        )
-        service.ingest(descriptor, (canonical,))
-        count += 1
+        by_time.setdefault(record.timestamp, []).append(record)
+    for timestamp, column in sorted(by_time.items()):
+        anchor = column[0]
+        for sample in interpolate_route_profiles(
+            column, ROUTE_PROFILE_ELEVATIONS
+        ):
+            canonical = CanonicalRecordInput(
+                "forecast",
+                timestamp,
+                anchor.latitude,
+                anchor.longitude,
+                # The camp's surveyed elevation, which is what the values were
+                # interpolated to - not the height of either source level.
+                sample.elevation,
+                f"ifs:0p25:{anchor.latitude:.1f}:{anchor.longitude:.1f}"
+                f":{sample.profile}@{sample.elevation:.0f}m"
+                f":interp{sample.lower_level_hpa}-{sample.upper_level_hpa}hpa",
+                anchor.source,
+                anchor.model,
+                _profile_quality_flags(
+                    sample,
+                    anchor.cycle,
+                    anchor.lead_seconds,
+                    anchor.latitude,
+                    anchor.longitude,
+                ),
+                wind_speed=sample.wind_speed,
+                wind_direction=sample.wind_direction,
+                temperature=sample.temperature_c,
+                pressure=sample.pressure_hpa,
+                forecast_cycle=anchor.cycle,
+                forecast_lead_seconds=anchor.lead_seconds,
+                route_profile=sample.profile,
+            )
+            service.ingest(descriptor, (canonical,))
+            count += 1
     return count
 
 
-def main() -> None:
-    """Run one full scheduler pass: surface + pressure ingestion for the latest cycle."""
-    import shutil
+def _ingest_ifs_pressure(service, cycle: datetime, leads=PRESSURE_LEADS) -> int:
+    """Ingest the vertical profile at every requested lead, not just lead 0.
 
-    shutil.rmtree(RAW_ROOT, ignore_errors=True)
+    Fetching only lead 0 gave a vertical snapshot at cycle time and no vertical
+    forecast at all, so nothing above the model surface could be shown for any
+    future hour.
+    """
+    import hashlib
+
+    count = 0
+    for lead in leads:
+        try:
+            payload = _fetch_pressure(cycle, lead)
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            # A lead that the provider has not published yet must not discard
+            # the leads that are already available.
+            print(f"  pressure +{lead}h unavailable ({exc}); skipping lead")
+            continue
+        messages = parse_pressure_messages(payload)
+        records = normalize_pressure_levels(
+            messages, LAT, LON, PRESSURE_LEVELS
+        )
+        digest = hashlib.sha256(payload).hexdigest()
+        artifact_path = RAW_ROOT / "ecmwf-ifs" / digest / "pressure.grib2"
+        artifact_path.parent.mkdir(parents=True, exist_ok=True)
+        if not artifact_path.exists():
+            artifact_path.write_bytes(payload)
+        descriptor = RawArtifactDescriptor(
+            "ecmwf-ifs",
+            "ifs-pressure",
+            str(artifact_path),
+            digest,
+            cycle,
+            "GRIB2",
+            len(payload),
+            forecast_cycle=cycle,
+            forecast_lead_seconds=lead * 3600,
+            valid_time=cycle + timedelta(hours=lead),
+            metadata={
+                "provider_payload_sha256": digest,
+                "provider_payload_size_bytes": len(payload),
+                "provider_lead_seconds": lead * 3600,
+                # Joined rather than a list: the contract boundary accepts only
+                # JSON scalars, and passing a list raised a TypeError that the
+                # cycle loop then reported as "cycle unavailable", so no
+                # pressure record was ever ingested.
+                "provider_levels_hpa": ",".join(PRESSURE_LEVELS),
+            },
+        )
+        for record in records:
+            canonical = CanonicalRecordInput(
+                "forecast",
+                record.timestamp,
+                # The grid point actually sampled, not the summit coordinates:
+                # storing LAT/LON here claimed a value had been produced for a
+                # location the model never evaluated.
+                record.latitude,
+                record.longitude,
+                record.altitude,
+                f"ifs:0p25:{record.latitude:.1f}:{record.longitude:.1f}"
+                f":{record.level_hpa}hpa",
+                record.source,
+                record.model,
+                _pressure_quality_flags(record),
+                wind_speed=record.wind_speed,
+                wind_direction=record.wind_direction,
+                temperature=record.temperature_c,
+                forecast_cycle=record.cycle,
+                forecast_lead_seconds=record.lead_seconds,
+            )
+            service.ingest(descriptor, (canonical,))
+            count += 1
+        profiles = _ingest_route_profiles(service, descriptor, records)
+        count += profiles
+        print(f"  pressure +{lead}h: {len(records)} levels, {profiles} camps")
+    return count
+
+
+def main() -> int:
+    """Run one scheduler pass: surface + pressure ingestion for the latest cycle.
+
+    Returns a process exit status. Every failure path used to return 0, so
+    systemd recorded ``Result=success`` even when nothing was ingested and
+    ``Restart=on-failure`` could never fire.
+    """
+    # RAW_ROOT is not wiped here: weather_raw_artifact.object_reference rows
+    # point into it, and deleting the tree on every run left the database
+    # referencing files that no longer existed.
     RAW_ROOT.mkdir(parents=True, exist_ok=True)
     policy = RawStoragePolicy(RAW_ROOT, Path("/mnt/d/Everest"))
     engine = create_engine(_env_db_url())
@@ -232,23 +410,29 @@ def main() -> None:
     cycle = datetime.now(UTC).replace(minute=0, second=0, microsecond=0)
     hour = cycle.hour
     cycle = cycle.replace(hour=hour - (hour % 6))  # snap to 00/06/12/18
-    # Retry recent cycles backward until one publishes (provider latency).
+    # ECMWF publishes a cycle roughly 6-8 h after its nominal time, so the two
+    # most recent cycles are normally still absent. Walking back finds the
+    # newest published one; the timer is phased so that is usually cycle-8h.
     for _ in range(8):
         try:
             print(f"ingesting IFS cycle {cycle.isoformat()}")
             count = _ingest_ifs(service, cycle)
             print(f"ingested {count} surface leads")
             pcount = _ingest_ifs_pressure(service, cycle)
-            print(f"ingested {pcount} pressure levels")
-            return
+            print(f"ingested {pcount} pressure records")
+            if count == 0 and pcount == 0:
+                print(f"cycle {cycle.isoformat()} yielded no records")
+                return 1
+            return 0
         except Exception as exc:  # pylint: disable=broad-exception-caught
             # provider latency: retry previous cycles until one publishes
             print(
                 f"cycle {cycle.isoformat()} unavailable ({exc}); trying previous"
             )
             cycle = cycle - timedelta(hours=6)
-    print("no recent cycle available; skipping this run")
+    print("no recent cycle available in the last 48 h; this run ingested nothing")
+    return 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

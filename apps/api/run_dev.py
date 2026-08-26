@@ -2,8 +2,11 @@
 
 Usage (from apps/api):
   python run_dev.py
-Requires PostgreSQL with migrated schema (revision 20260824_0007) and the
-documented database URL. Defaults to the disposable everest_test database.
+Requires PostgreSQL with the migrated schema and an explicitly resolvable
+database target: either ``EVEREST_DATABASE_URL`` or the ``EVEREST_DB_*``
+variables (see ``everest_api.persistence.database.resolve_database_url``).
+There is no default target -- the launcher fails rather than connect to a
+different database than the ingestion path writes to.
 """
 
 from __future__ import annotations
@@ -13,18 +16,21 @@ import os
 import uvicorn
 
 from everest_api.app import create_app
-from everest_api.persistence.database import create_session_factory
+from everest_api.persistence.database import (
+    create_session_factory,
+    resolve_database_url,
+)
 
-DEFAULT_URL = "postgresql+psycopg://everest:everest@127.0.0.1:5432/everest_test"
 PORT = int(os.environ.get("EVEREST_API_PORT", "52147"))
+HOST = os.environ.get("EVEREST_API_HOST", "0.0.0.0")
 
 
 def main() -> None:
     """Run uvicorn on the documented non-standard port."""
-    database_url = os.environ.get("EVEREST_DATABASE_URL", DEFAULT_URL)
+    database_url = resolve_database_url()
     factory = create_session_factory(database_url)
     app = create_app(factory)
-    uvicorn.run(app, host="0.0.0.0", port=PORT)
+    uvicorn.run(app, host=HOST, port=PORT)
 
 
 if __name__ == "__main__":

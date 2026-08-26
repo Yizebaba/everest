@@ -23,17 +23,22 @@ _PUBLIC_WEATHER_FIELDS = {
     "temperature",
     "precipitation",
     "visibility",
+    "pressure",
     "source",
     "model",
     "forecast_cycle",
     "forecast_lead_time",
+    "route_profile",
     "quality_flags",
 }
+# Raw-provenance, storage, and retention internals. ``route_profile`` is not
+# among them: it is a canonical label the profile route already accepts as a
+# query parameter and echoes at the top level, so serving it on the record
+# discloses nothing the caller did not supply.
 _PRIVATE_WEATHER_FIELDS = {
     "raw_artifact_id",
     "record_id",
     "dataset",
-    "route_profile",
     "created_at",
     "object_reference",
     "source_url",
@@ -165,6 +170,34 @@ def test_weather_responses_include_spatial_key_without_private_fields(
     )
     assert _PRIVATE_WEATHER_FIELDS.isdisjoint(public_record)
     assert "private/raw/dataset" not in response.text
+
+
+class _ProfileColumnSession(_FakeSession):
+    """Return one profile record carrying a height label and a pressure level."""
+
+    def scalars(self, _statement: object) -> list[WeatherRecordModel]:
+        """Return a summit-labelled record with its interpolated pressure."""
+        record = _weather_record()
+        record.pressure = 314.0
+        return [record]
+
+
+def test_profile_records_carry_their_height_label_and_pressure() -> None:
+    """A vertical record states which camp it is for and at what pressure.
+
+    Both columns were persisted but omitted from the payload, so every profile
+    row reached the client with ``route_profile`` and ``pressure`` absent and the
+    vertical dimension could not be rendered from the API alone.
+    """
+    response = TestClient(create_app(_ProfileColumnSession)).get(
+        "/api/weather/profile?profile=summit"
+    )
+
+    assert response.status_code == 200
+    record = response.json()["records"][0]
+    assert record["route_profile"] == "SUMMIT"
+    assert record["pressure"] == 314.0
+    assert record["altitude"] == pytest.approx(5830.964752197266)
 
 
 def test_profile_rejects_unsupported_profile_and_echoes_correlation_id() -> (
