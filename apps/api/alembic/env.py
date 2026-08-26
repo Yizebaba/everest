@@ -21,10 +21,15 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# The database target is resolved by the one shared resolver so migrations can
-# never be applied to a different store than the API and the scheduler use.
-# alembic.ini deliberately carries no URL.
-config.set_main_option("sqlalchemy.url", resolve_database_url())
+# The database target is resolved by the one shared resolver so migrations
+# can never be applied to a different store than the API and the scheduler
+# use, and alembic.ini deliberately carries no URL. A caller that sets one
+# explicitly must still win: overriding it unconditionally meant an
+# integration-test fixture pointing at a disposable database was ignored,
+# and the ``downgrade base`` at the end of that fixture dropped every table
+# in the served database instead.
+if not config.get_main_option("sqlalchemy.url", None):
+    config.set_main_option("sqlalchemy.url", resolve_database_url())
 
 target_metadata = Base.metadata
 

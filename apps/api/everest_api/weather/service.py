@@ -7,7 +7,7 @@ from collections.abc import Mapping, Sequence
 from typing import Callable
 from uuid import UUID
 
-from sqlalchemy import select, text
+from sqlalchemy import func, literal, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -34,6 +34,12 @@ from everest_api.weather.retention import (
 )
 
 SUPPORTED_PROFILES = frozenset({"EBC", "C1", "C2", "C3", "C4", "SUMMIT"})
+
+# Safety valve on the "current" projection. Selection is per series, and the
+# number of series a cycle produces is small (one per pressure level, camp, and
+# surface grid point), so this bound is never expected to bite; it only stops an
+# unbounded response if a connector starts emitting new spatial keys per run.
+CURRENT_SERIES_LIMIT = 500
 
 
 class WeatherIngestionService(IngestionPort):
@@ -632,16 +638,66 @@ class WeatherQueryService:
         """Bind queries to an API-owned read session."""
         self._session = session
 
-    def current(self, source_id: str | None = None) -> list[WeatherRecordModel]:
-        """Return latest valid records per request ordering, without provider I/O."""
-        statement = select(WeatherRecordModel).order_by(
-            WeatherRecordModel.timestamp.desc()
+    def current(
+        self,
+        source_id: str | None = None,
+        *,
+        now: datetime | None = None,
+    ) -> list[WeatherRecordModel]:
+        """Return the record nearest the present for each series.
+
+        A series is one (source, dataset, spatial key) — a pressure level, an
+        interpolated camp, or a surface grid point. Each contributes exactly
+        one row: the most recent one already valid, or the soonest upcoming
+        one if a series has nothing in the past yet. No provider is contacted.
+
+        This used to be ``order_by(timestamp.desc()).limit(100)``, which is
+        not "current" once forecast leads are persisted alongside surface
+        fields: the hundred newest valid times were all pressure-level rows
+        up to three days out, so the surface record carrying visibility never
+        appeared in a response the dashboard labels current. Ranking per
+        series also makes the response size a function of the grid rather
+        than of how many leads have been ingested.
+        """
+        moment = literal(
+            now or datetime.now(UTC), WeatherRecordModel.timestamp.type
+        )
+        # Signed seconds would order the past backwards; the absolute gap
+        # plus an "is it still in the future" tiebreak yields newest-past
+        # first, then soonest-future.
+        distance = func.abs(
+            func.extract("epoch", WeatherRecordModel.timestamp - moment)
+        )
+        ranked = select(
+            WeatherRecordModel.record_id.label("record_id"),
+            func.row_number()
+            .over(
+                partition_by=(
+                    WeatherRecordModel.source_id,
+                    WeatherRecordModel.dataset,
+                    WeatherRecordModel.spatial_key,
+                ),
+                order_by=(
+                    (WeatherRecordModel.timestamp > moment).asc(),
+                    distance.asc(),
+                ),
+            )
+            .label("series_rank"),
+            distance.label("distance_seconds"),
         )
         if source_id:
-            statement = statement.where(
-                WeatherRecordModel.source_id == source_id
-            )
-        return list(self._session.scalars(statement.limit(100)))
+            ranked = ranked.where(WeatherRecordModel.source_id == source_id)
+        latest = ranked.subquery()
+        statement = (
+            select(WeatherRecordModel)
+            .join(latest, WeatherRecordModel.record_id == latest.c.record_id)
+            .where(latest.c.series_rank == 1)
+            # Nearest the present first, then ground-up, so a caller that
+            # shows only the first few rows shows the most current ones.
+            .order_by(latest.c.distance_seconds, WeatherRecordModel.altitude)
+            .limit(CURRENT_SERIES_LIMIT)
+        )
+        return list(self._session.scalars(statement))
 
     def forecast(
         self,

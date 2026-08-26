@@ -12,10 +12,12 @@ from typing import Iterator
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
+from sqlalchemy.engine.url import make_url
 from sqlalchemy.orm import Session, sessionmaker
 from alembic import command
 from alembic.config import Config
 
+from everest_api.persistence.database import resolve_database_url
 from everest_api.raw_storage import RawStoragePolicy
 
 _DATABASE_URL_ENV = "EVEREST_TEST_DATABASE_URL"
@@ -34,7 +36,35 @@ def _test_database_url() -> str:
         pytest.skip(f"{_DATABASE_URL_ENV} is required for PostgreSQL tests")
     if not url.startswith(("postgresql://", "postgresql+psycopg://")):
         pytest.fail(f"{_DATABASE_URL_ENV} must name a PostgreSQL database")
+    _refuse_served_database(url)
     return url
+
+
+def _refuse_served_database(url: str) -> None:
+    """Fail closed when the test URL names the database the API serves.
+
+    The fixture below ends with ``downgrade base``, which drops every table. A
+    test run that resolved to the served store therefore destroys operational
+    data rather than failing, so the collision is rejected before any migration
+    runs. The comparison is on host, port, and database name only; no
+    credential is read or reported.
+    """
+    try:
+        served = make_url(resolve_database_url())
+    except RuntimeError:
+        # No deployment target is configured in this environment, so there is
+        # nothing the test database can collide with.
+        return
+    candidate = make_url(url)
+    if (
+        candidate.database == served.database
+        and (candidate.host or "") == (served.host or "")
+        and (candidate.port or 5432) == (served.port or 5432)
+    ):
+        pytest.fail(
+            f"{_DATABASE_URL_ENV} names the database this deployment serves; "
+            "point it at a disposable database instead"
+        )
 
 
 @pytest.fixture(name="migrated_postgres_engine")
