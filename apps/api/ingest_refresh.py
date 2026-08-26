@@ -7,7 +7,8 @@ so a refresh pass never trips a "checksum sidecar is inconsistent" error from
 an earlier run's embedded retrieved_at timestamp.
 
 Run inside WSL:
-  /tmp/everest-venv/bin/python apps/api/ingest_refresh.py
+  /tmp/everest-venv/bin/python apps/api/ingest_refresh.py          # both
+  /tmp/everest-venv/bin/python apps/api/ingest_refresh.py gfs      # one
 """
 
 # pylint: disable=wrong-import-position,wrong-import-order,import-outside-toplevel
@@ -16,6 +17,8 @@ Run inside WSL:
 
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
+from dataclasses import replace
 import hashlib
 import json
 import sys
@@ -45,10 +48,11 @@ from weather_ingestion_contract import (  # noqa: E402
 
 LAT = 27.98806
 LON = 86.92528
-IFS_CYCLE = datetime(2026, 8, 25, 6, 0, tzinfo=timezone.utc)
-GFS_CYCLE = datetime(2026, 8, 25, 12, 0, tzinfo=timezone.utc)
 IFS_LEADS = (0, 3, 6, 12, 24, 48, 72)
 GFS_LEADS = (3, 6, 24)
+# How far back to walk looking for a published cycle. Providers post a cycle a
+# few hours after its nominal time, so "now" is normally not yet available.
+CYCLE_SEARCH_STEPS = 8
 DB_URL = resolve_database_url()
 RAW_ROOT = Path("/mnt/d/Everest-data/raw")
 
@@ -70,14 +74,56 @@ def _range(url: str, start: int, length: int) -> bytes:
     return body
 
 
-def _fetch_ifs(lead: int) -> tuple[bytes, str, int]:
-    stamp = IFS_CYCLE.strftime("%Y%m%d%H%M%S")
-    date_dir = IFS_CYCLE.strftime("%Y%m%d")
-    hour = IFS_CYCLE.strftime("%H")
-    base = (
-        f"https://data.ecmwf.int/forecasts/{date_dir}/{hour}z/ifs/0p25/oper/"
-        f"{stamp}-{lead}h-oper-fc"
+def _available(url: str) -> bool:
+    """Report whether a provider index exists, without downloading the field."""
+    try:
+        _get(url, {"Range": "bytes=0-0", "User-Agent": "everest-refresh/1.0"})
+    except OSError:
+        return False
+    return True
+
+
+def _six_hourly_cycles() -> list[datetime]:
+    """Candidate cycles, newest first, from the last two days."""
+    now = datetime.now(timezone.utc)
+    latest = now.replace(
+        hour=now.hour - now.hour % 6, minute=0, second=0, microsecond=0
     )
+    return [latest - timedelta(hours=6 * step) for step in range(CYCLE_SEARCH_STEPS)]
+
+
+def _ifs_base(cycle: datetime, lead: int) -> str:
+    """Provider path for one IFS 0.25 degree operational forecast field set."""
+    return (
+        f"https://data.ecmwf.int/forecasts/{cycle:%Y%m%d}/{cycle:%H}z/ifs/"
+        f"0p25/oper/{cycle:%Y%m%d%H%M%S}-{lead}h-oper-fc"
+    )
+
+
+def _gfs_base(cycle: datetime, lead: int) -> str:
+    """Provider path for one GFS 0.25 degree pgrb2 forecast file."""
+    return (
+        f"https://nomads.ncep.noaa.gov/pub/data/nccf/com/gfs/prod/"
+        f"gfs.{cycle:%Y%m%d}/{cycle:%H}/atmos/gfs.t{cycle:%H}z.pgrb2.0p25."
+        f"f{lead:03d}"
+    )
+
+
+def _latest_cycle(base: Callable[[datetime, int], str], suffix: str) -> datetime:
+    """Newest published cycle for a provider.
+
+    The cycles used to be frozen module constants, which meant the script
+    stopped working as soon as the provider expired that day's run rather than
+    fetching what is actually current.
+    """
+    for cycle in _six_hourly_cycles():
+        if _available(base(cycle, 0) + suffix):
+            return cycle
+    raise ValueError("no published cycle found in the last two days")
+
+
+def _fetch_ifs(cycle: datetime, lead: int) -> tuple[bytes, str, int]:
+    base = _ifs_base(cycle, lead)
     rows = [
         json.loads(line)
         for line in _get(
@@ -104,13 +150,8 @@ def _fetch_ifs(lead: int) -> tuple[bytes, str, int]:
     return bytes(buf), digest, len(buf)
 
 
-def _fetch_gfs(lead: int) -> tuple[bytes, str, int]:
-    stamp = GFS_CYCLE.strftime("%Y%m%d")
-    hour = GFS_CYCLE.strftime("%H")
-    base = (
-        f"https://nomads.ncep.noaa.gov/pub/data/nccf/com/gfs/prod/"
-        f"gfs.{stamp}/{hour}/atmos/gfs.t{hour}z.pgrb2.0p25.f{lead:03d}"
-    )
+def _fetch_gfs(cycle: datetime, lead: int) -> tuple[bytes, str, int]:
+    base = _gfs_base(cycle, lead)
     idx = _get(base + ".idx", {"User-Agent": "everest-refresh/1.0"}).decode()
     idx_lines = idx.splitlines()
     parsed_idx = []
@@ -235,8 +276,62 @@ def _seed(session) -> None:
     session.commit()
 
 
-def main() -> None:
-    """Fetch and ingest the latest IFS and GFS forecasts with current QC."""
+def _ingest_ifs(service) -> None:
+    """Ingest the newest published IFS surface leads."""
+    cycle = _latest_cycle(_ifs_base, ".index")
+    print(f"IFS cycle {cycle:%Y-%m-%dT%H:%M}Z")
+    zero_altitude = None
+    for lead in IFS_LEADS:
+        payload, digest, _size = _fetch_ifs(cycle, lead)
+        messages = parse_ifs(payload)
+        record = normalize_ifs(messages, LAT, LON)
+        altitude = record.altitude
+        if altitude != altitude:  # NaN
+            if zero_altitude is None:
+                continue
+            altitude = zero_altitude
+        else:
+            zero_altitude = altitude
+        record = replace(record, altitude=altitude)
+        descriptor = _persist(
+            service, "ecmwf-ifs", "ifs-oper", cycle, lead, payload, digest
+        )
+        canonical = _canonical("ecmwf-ifs", record, lead, cycle)
+        service.ingest(descriptor, (canonical,))
+        print(
+            f"  IFS lead {lead:3d}h: t={record.temperature:.1f} C "
+            f"precip={record.precipitation} vis={record.visibility} "
+            f"flags={sorted(record.quality_flags)}"
+        )
+
+
+def _ingest_gfs(service) -> None:
+    """Ingest the newest published GFS leads.
+
+    GFS is the only configured provider that publishes surface visibility: IFS
+    open data has no visibility parameter at all, so without this pass the
+    canonical ``visibility`` column stays empty for every record.
+    """
+    cycle = _latest_cycle(_gfs_base, ".idx")
+    print(f"GFS cycle {cycle:%Y-%m-%dT%H:%M}Z")
+    for lead in GFS_LEADS:
+        payload, digest, _size = _fetch_gfs(cycle, lead)
+        messages = parse_gfs(payload)
+        record = normalize_gfs(messages, LAT, LON)
+        descriptor = _persist(
+            service, "noaa-gfs", "gfs-oper", cycle, lead, payload, digest
+        )
+        canonical = _canonical("noaa-gfs", record, lead, cycle)
+        service.ingest(descriptor, (canonical,))
+        print(
+            f"  GFS lead {lead:3d}h: t={record.temperature:.1f} C "
+            f"precip={record.precipitation} vis={record.visibility} "
+            f"flags={sorted(record.quality_flags)}"
+        )
+
+
+def main(providers: Sequence[str] = ("ifs", "gfs")) -> None:
+    """Fetch and ingest the newest published forecasts with current QC."""
     policy = RawStoragePolicy(RAW_ROOT, Path("/mnt/d/Everest"))
     engine = create_engine(DB_URL)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
@@ -244,56 +339,17 @@ def main() -> None:
     with factory() as session:
         _seed(session)
 
-    # IFS
-    try:
-        zero_altitude = None
-        for lead in IFS_LEADS:
-            payload, digest, size = _fetch_ifs(lead)
-            messages = parse_ifs(payload)
-            record = normalize_ifs(messages, LAT, LON)
-            altitude = record.altitude
-            if altitude != altitude:  # NaN
-                if zero_altitude is None:
-                    continue
-                altitude = zero_altitude
-            else:
-                zero_altitude = altitude
-            from dataclasses import replace
-
-            record = replace(record, altitude=altitude)
-            descriptor = _persist(
-                service, "ecmwf-ifs", "ifs-oper", IFS_CYCLE, lead, payload, digest
-            )
-            canonical = _canonical("ecmwf-ifs", record, lead, IFS_CYCLE)
-            service.ingest(descriptor, (canonical,))
-            print(
-                f"  IFS lead {lead:3d}h: t={record.temperature:.1f} C "
-                f"precip={record.precipitation} vis={record.visibility} "
-                f"flags={sorted(record.quality_flags)}"
-            )
-    except Exception as exc:  # pylint: disable=broad-exception-caught
-        print(f"IFS refresh failed: {exc}")
-
-    # GFS
-    try:
-        for lead in GFS_LEADS:
-            payload, digest, size = _fetch_gfs(lead)
-            messages = parse_gfs(payload)
-            record = normalize_gfs(messages, LAT, LON)
-            descriptor = _persist(
-                service, "noaa-gfs", "gfs-oper", GFS_CYCLE, lead, payload, digest
-            )
-            canonical = _canonical("noaa-gfs", record, lead, GFS_CYCLE)
-            service.ingest(descriptor, (canonical,))
-            print(
-                f"  GFS lead {lead:3d}h: t={record.temperature:.1f} C "
-                f"precip={record.precipitation} vis={record.visibility} "
-                f"flags={sorted(record.quality_flags)}"
-            )
-    except Exception as exc:  # pylint: disable=broad-exception-caught
-        print(f"GFS refresh failed: {exc}")
+    for provider, ingest in (("ifs", _ingest_ifs), ("gfs", _ingest_gfs)):
+        if provider not in providers:
+            continue
+        try:
+            ingest(service)
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            # One provider being unpublished or unreachable must not discard the
+            # other's records, which is why each pass is isolated.
+            print(f"{provider.upper()} refresh failed: {exc}")
     print("refresh done")
 
 
 if __name__ == "__main__":
-    main()
+    main(tuple(sys.argv[1:]) or ("ifs", "gfs"))
