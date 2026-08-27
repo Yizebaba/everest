@@ -21,6 +21,137 @@ services:
     networks:
       - everest_net
 
+  api:
+    profiles: ["app"]
+    build:
+      context: ../..
+      dockerfile: infra/docker/api.Dockerfile
+    image: everest-api:local
+    restart: unless-stopped
+    environment:
+      EVEREST_DB_USER: everest
+      EVEREST_DB_PASSWORD: "${EVEREST_DB_PASSWORD:?EVEREST_DB_PASSWORD must be set}"
+      EVEREST_DB_NAME: everest
+      EVEREST_DB_HOST: postgres
+      EVEREST_DB_PORT: "5432"
+      EVEREST_WIND_FIELD_DERIVED_ROOT: /var/lib/everest/derived
+      EVEREST_CORS_ALLOWED_ORIGINS: "${EVEREST_CORS_ALLOWED_ORIGINS:-http://localhost:52148}"
+    ports:
+      - "127.0.0.1:${EVEREST_API_PORT:-52147}:52147"
+    volumes:
+      - everest_derived_data:/var/lib/everest/derived:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:52147/readyz', timeout=3).read()"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - everest_net
+
+  web:
+    profiles: ["app"]
+    build:
+      context: ../..
+      dockerfile: infra/docker/web.Dockerfile
+      args:
+        NEXT_PUBLIC_EVEREST_API_BASE_URL: "${NEXT_PUBLIC_EVEREST_API_BASE_URL:-http://localhost:52147}"
+        NEXT_PUBLIC_CESIUM_ION_TOKEN: "${NEXT_PUBLIC_CESIUM_ION_TOKEN:-}"
+    image: everest-web:local
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_EVEREST_API_BASE_URL: "${NEXT_PUBLIC_EVEREST_API_BASE_URL:-http://localhost:52147}"
+    ports:
+      - "127.0.0.1:${EVEREST_WEB_PORT:-52148}:52148"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:52148/').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - everest_net
+
+  scheduler:
+    profiles: ["jobs"]
+    build:
+      context: ../..
+      dockerfile: infra/docker/worker.Dockerfile
+    image: everest-scheduler:local
+    restart: "no"
+    environment:
+      EVEREST_DB_USER: everest
+      EVEREST_DB_PASSWORD: "${EVEREST_DB_PASSWORD:?EVEREST_DB_PASSWORD must be set}"
+      EVEREST_DB_NAME: everest
+      EVEREST_DB_HOST: postgres
+      EVEREST_DB_PORT: "5432"
+      EVEREST_RAW_ROOT: /var/lib/everest/raw
+      EVEREST_WIND_FIELD_DERIVED_ROOT: /var/lib/everest/derived
+      EVEREST_SCHEDULER_IFS_ENABLED: "true"
+      EVEREST_SCHEDULER_GFS_ENABLED: "true"
+      EVEREST_SCHEDULER_AIFS_ENABLED: "false"
+      EVEREST_SCHEDULER_ICON_ENABLED: "false"
+    volumes:
+      - everest_raw_data:/var/lib/everest/raw
+      - everest_derived_data:/var/lib/everest/derived
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    mem_limit: 8g
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - everest_net
+
+  migrate:
+    profiles: ["app", "jobs"]
+    build:
+      context: ../..
+      dockerfile: infra/docker/api.Dockerfile
+    image: everest-api:local
+    restart: "no"
+    working_dir: /mnt/d/Everest/apps/api
+    command: ["python", "-m", "alembic", "upgrade", "head"]
+    environment:
+      EVEREST_DB_USER: everest
+      EVEREST_DB_PASSWORD: "${EVEREST_DB_PASSWORD:?EVEREST_DB_PASSWORD must be set}"
+      EVEREST_DB_NAME: everest
+      EVEREST_DB_HOST: postgres
+      EVEREST_DB_PORT: "5432"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - everest_net
+
 networks:
   everest_net:
     name: everest_net
@@ -28,3 +159,9 @@ networks:
 volumes:
   everest_postgres_data:
     name: everest_postgres_data
+  everest_raw_data:
+    external: true
+    name: everest_raw_data
+  everest_derived_data:
+    external: true
+    name: everest_derived_data

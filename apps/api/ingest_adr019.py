@@ -1,4 +1,5 @@
 """Persist real ADR-019 source data into the persistent Everest database."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -25,13 +26,15 @@ from everest_api.sources.normalizers import (  # noqa: E402
     normalize_satellite_segment,
     normalize_terrain_tile,
 )
-from everest_aws.parser import parse_rows  # noqa: E402
-from everest_aws.qc import run_qc as aws_qc  # noqa: E402
-from himawari.connector import sha256_of as h_sha  # noqa: E402
-from himawari.parser import parse_segment  # noqa: E402
-from terrain.connector import sha256_of as t_sha  # noqa: E402
-from terrain.parser import parse_tile  # noqa: E402
-from terrain.qc import run_qc as t_qc  # noqa: E402
+from services.weather.everest_aws.parser import parse_rows  # noqa: E402
+from services.weather.everest_aws.qc import run_qc as aws_qc  # noqa: E402
+from services.satellite.himawari.connector import (
+    sha256_of as h_sha,
+)  # noqa: E402
+from services.satellite.himawari.parser import parse_segment  # noqa: E402
+from services.terrain.connector import sha256_of as t_sha  # noqa: E402
+from services.terrain.parser import parse_tile  # noqa: E402
+from services.terrain.qc import run_qc as t_qc  # noqa: E402
 
 RAW = Path("/mnt/d/Everest-data/raw")
 _UTC = UTC
@@ -45,7 +48,9 @@ def db_url() -> str:
 
 
 def ingest_terrain(session: Session) -> None:
-    terrain_path = RAW / "terrain" / "Copernicus_DSM_COG_10_N27_00_E086_00_DEM.tif"
+    terrain_path = (
+        RAW / "terrain" / "Copernicus_DSM_COG_10_N27_00_E086_00_DEM.tif"
+    )
     if not terrain_path.exists():
         print("terrain file missing; skip")
         return
@@ -109,7 +114,9 @@ def ingest_aws(session: Session) -> None:
                 quality_flags=list(obs.quality_flags),
             )
         )
-        print(f"aws {station}: first row {first.timestamp} t={first.temperature_c}C")
+        print(
+            f"aws {station}: first row {first.timestamp} t={first.temperature_c}C"
+        )
 
 
 def ingest_himawari(session: Session) -> None:

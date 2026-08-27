@@ -13,11 +13,26 @@
 // tiles.virtualearth.net, so those are permitted for the imagery base map.
 // Bing tile endpoints are served over http (ecn.tN.tiles.virtualearth.net),
 // so both schemes must be allowed for World Imagery to load.
+const configuredApiUrl =
+  process.env.NEXT_PUBLIC_EVEREST_API_BASE_URL ?? "http://localhost:52147";
+let configuredApiOrigin;
+try {
+  const parsed = new URL(configuredApiUrl);
+  if (!["http:", "https:"].includes(parsed.protocol)) {
+    throw new Error("API URL must use http or https");
+  }
+  configuredApiOrigin = parsed.origin;
+} catch (error) {
+  throw new Error(
+    `NEXT_PUBLIC_EVEREST_API_BASE_URL must be an http(s) origin: ${error instanceof Error ? error.message : "invalid URL"}`,
+  );
+}
+
 const csp = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-eval' 'unsafe-inline'",
   "style-src 'self' 'unsafe-inline'",
-  "connect-src 'self' http://127.0.0.1:52147 http://localhost:52147 http://192.168.1.11:52147 https://tile.openstreetmap.org https://api.cesium.com https://assets.cesium.com https://assets.ion.cesium.com http://*.virtualearth.net https://*.virtualearth.net",
+  `connect-src 'self' ${configuredApiOrigin} http://127.0.0.1:52147 http://localhost:52147 http://192.168.1.11:52147 https://tile.openstreetmap.org https://api.cesium.com https://assets.cesium.com https://assets.ion.cesium.com http://*.virtualearth.net https://*.virtualearth.net`,
   "img-src 'self' data: http: https:",
   "font-src 'self'",
   "worker-src 'self' blob:",

@@ -56,23 +56,24 @@ def _ingest(session: Session) -> None:
     # pylint: disable=too-many-locals,import-outside-toplevel
     # The fixture composes three independent provider pipelines in one helper;
     # each required parser/normalizer import is intentionally a local name.
-    from everest_aws.parser import parse_rows  # type: ignore[import-not-found]
-    from everest_aws.qc import run_qc as aws_qc  # type: ignore[import-not-found]
+    raw = _require_raw()
+
+    from services.weather.everest_aws.parser import parse_rows
+    from services.weather.everest_aws.qc import run_qc as aws_qc
     from everest_api.sources.normalizers import (
         normalize_aws_observation,
         normalize_satellite_segment,
         normalize_terrain_tile,
     )
-    from himawari.connector import sha256_of as h_sha  # type: ignore[import-not-found]
-    from himawari.parser import parse_segment  # type: ignore[import-not-found]
-    from terrain.connector import sha256_of as t_sha  # type: ignore[import-not-found]
-    from terrain.parser import parse_tile  # type: ignore[import-not-found]
-    from terrain.qc import run_qc as t_qc  # type: ignore[import-not-found]
+    from services.satellite.himawari.connector import sha256_of as h_sha
+    from services.satellite.himawari.parser import parse_segment
+    from services.terrain.connector import sha256_of as t_sha
+    from services.terrain.parser import parse_tile
+    from services.terrain.qc import run_qc as t_qc
 
     session.execute(
         text("TRUNCATE TABLE terrain_tile, aws_observation, satellite_segment")
     )
-    raw = _require_raw()
 
     terrain_path = raw["terrain"]
     parsed = parse_tile(terrain_path)

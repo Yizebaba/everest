@@ -46,9 +46,9 @@ def main() -> None:
             ("himawari-9", "connected", "NOAA AWS S3", True),
         ):
             existing = session.scalars(
-                __import__("sqlalchemy").select(DataSourceRegistryModel).where(
-                    DataSourceRegistryModel.source_id == source_id
-                )
+                __import__("sqlalchemy")
+                .select(DataSourceRegistryModel)
+                .where(DataSourceRegistryModel.source_id == source_id)
             ).first()
             if existing is None:
                 session.add(
@@ -66,15 +66,17 @@ def main() -> None:
                     )
                 )
         session.flush()
-        from everest_aws.parser import parse_rows
-        from everest_aws.qc import run_qc as aws_qc
-        from himawari.connector import sha256_of as h_sha
-        from himawari.parser import parse_segment
-        from terrain.connector import sha256_of as t_sha
-        from terrain.parser import parse_tile
-        from terrain.qc import run_qc as t_qc
+        from services.weather.everest_aws.parser import parse_rows
+        from services.weather.everest_aws.qc import run_qc as aws_qc
+        from services.satellite.himawari.connector import sha256_of as h_sha
+        from services.satellite.himawari.parser import parse_segment
+        from services.terrain.connector import sha256_of as t_sha
+        from services.terrain.parser import parse_tile
+        from services.terrain.qc import run_qc as t_qc
 
-        terrain_path = root / "terrain" / "Copernicus_DSM_COG_10_N27_00_E086_00_DEM.tif"
+        terrain_path = (
+            root / "terrain" / "Copernicus_DSM_COG_10_N27_00_E086_00_DEM.tif"
+        )
         if terrain_path.exists():
             parsed = parse_tile(terrain_path)
             qc = t_qc(parsed)
@@ -154,7 +156,9 @@ def main() -> None:
                     size_bytes=satellite.size_bytes,
                 )
             )
-            print(f"himawari: {satellite.band} band segment {satellite.segment}")
+            print(
+                f"himawari: {satellite.band} band segment {satellite.segment}"
+            )
         session.commit()
     print("ingest done")
 

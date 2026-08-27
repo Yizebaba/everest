@@ -13,6 +13,7 @@ dependencies = [
     'alembic>=1.13,<2.0',
     'psycopg[binary]>=3.1,<4.0',
     'fastapi>=0.115,<1.0',
+    'uvicorn>=0.30,<1.0',
 ]
 
 [project.optional-dependencies]
@@ -25,6 +26,7 @@ weather-ingestion = [
 ]
 test = [
     'pytest>=8.0,<9.0',
+    'httpx>=0.27,<1.0',
 ]
 lint = [
     'black>=24.0,<25.0',

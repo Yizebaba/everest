@@ -1,0 +1,27 @@
+.git
+.gitignore
+.gitleaks-baseline.json
+.gitleaksignore
+.claude
+.gstack
+.next
+.pytest_cache
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/.coverage
+**/htmlcov
+**/*.egg-info
+**/build
+**/dist
+**/.venv
+**/venv
+**/node_modules
+apps/web/public/cesium
+**/.env
+**/.env.*
+*.log
+docs
+Everest OS.txt
