@@ -3501,7 +3501,11 @@ interpolation. Missing pairs are skipped. The 256-emitter ceiling is a hard
 cap even when a caller supplies a larger option. The 400 hPa field is shown
 on a fixed 7,500 m non-geometric visualization plane, not converted to
 physical altitude. Rendering uses Cesium's public `ParticleSystem` API as
-the complete rendering boundary for this feature.
+the complete rendering boundary for this feature. Particle initial speed
+remains 0. CircleEmitter radius is `Number.EPSILON` because Cesium 1.144
+requires radius > 0; EPSILON is a public-API point approximation, not a
+geometric disk. Speed 0 cancels the emitter's UNIT_Z velocity, and the
+update callback is the only U/V drift.
 
 Hard limits are 1,000 values per axis, 250,000 grid points, 16 MiB serialized
 JSON, 8 validated cache entries, a 512-entry / 256 KiB valid-time index, and

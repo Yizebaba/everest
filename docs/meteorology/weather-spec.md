@@ -42,8 +42,10 @@ The wire/storage hard limits are 1,000 values per axis, 250,000 grid points,
 16 MiB serialized JSON, and 8 validated cache entries. The frontend contract
 hard-caps exact-node seed emitters at 256, including caller overrides, and uses
 Cesium's public `ParticleSystem` as its rendering boundary. Particle initial
-speed and emitter radius are zero; the update callback applies only the exact
-retained-node U/V displacement.
+speed is zero. CircleEmitter radius is `Number.EPSILON` because Cesium 1.144
+requires radius > 0; EPSILON is a public-API point approximation, not a
+geometric disk. Speed 0 cancels the emitter's UNIT_Z velocity, and the update
+callback applies only the exact retained-node U/V displacement.
 
 ## EV-DATA-001-F-AIFS-DOCS-CLOSE-RETRY — authoritative hardened DBRE evidence
 

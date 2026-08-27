@@ -138,11 +138,13 @@ SHA-256 pointer target before returning a frame.
   particles/second per emitter, particle life 1.5 seconds, one initial burst of
   2-4 particles, and a 4 px sprite. A larger caller-provided seed cap is not
   permitted by this design contract.
-- Rendering uses a single velocity source: Cesium's initial particle speed and
-  emitter radius are zero, and the update callback applies only the exact
-  backend eastward/northward U/V displacement. Setup is transactional: a
-  partial primitive-add failure removes all systems already added and restores
-  the prior `requestRenderMode` value.
+- Rendering uses a single velocity source: Cesium's initial particle speed is
+  zero. CircleEmitter radius is `Number.EPSILON` because Cesium 1.144 requires
+  radius > 0; EPSILON is a public-API point approximation, not a geometric
+  disk. Speed 0 cancels the emitter's UNIT_Z velocity, and the update callback
+  applies only the exact backend eastward/northward U/V displacement. Setup is
+  transactional: a partial primitive-add failure removes all systems already
+  added and restores the prior `requestRenderMode` value.
 - The 400 hPa field is displayed on a clearly non-geometric, fixed 7,500 m
   visualization plane. Pressure level is not geometric altitude, so the plane
   must not be labeled or interpreted as the physical height of the 400 hPa
