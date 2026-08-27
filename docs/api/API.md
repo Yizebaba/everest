@@ -156,9 +156,11 @@ presence.
 `CanonicalWeatherRecord` preserves the Phase B core units and includes
 `record_type`, `timestamp`, coordinate/altitude, core meteorology values,
 `spatial_key`, `source`, `model`, forecast identity, and additive
-`quality_flags`. `spatial_key` is the canonical provider grid-cell or stable
-station/pixel identity required for provenance and deduplication; it is not a
-raw-storage reference. Datetimes are emitted as UTC ISO-8601 `Z` values.
+`quality_flags`. Public current/forecast/profile records also serialize
+persisted `relative_humidity` (nullable; never invented). `spatial_key` is
+the canonical provider grid-cell or stable station/pixel identity required
+for provenance and deduplication; it is not a raw-storage reference.
+Datetimes are emitted as UTC ISO-8601 `Z` values.
 
 ## Implemented routes (HEAD, 2026-08-27)
 

@@ -47,9 +47,12 @@ branch `main`). HEAD includes:
 - Next.js 15 + Cesium dashboard in `apps/web` (dev port 52148)
 - FastAPI in `apps/api` (dev port 52147) with live GET routes:
   `/api/weather/current`, `/api/weather/forecast`, `/api/weather/profile`,
-  `/api/weather/sources`, `/api/data-health`, `/api/terrain/tile`,
-  `/api/observations/current`, `/api/satellite/segments`, `/api/everest/route`,
-  `/healthz`, `/readyz`
+  `/api/weather/sources`, `/api/weather/wind-field`, `/api/data-health`,
+  `/api/terrain/tile`, `/api/observations/current`, `/api/satellite/segments`,
+  `/api/everest/route`, `/api/risk/summit-window`, `/healthz`, `/readyz`
+- Public current/forecast/profile records serialize persisted
+  `relative_humidity` (nullable; never invented). `/api/weather/wind-field`
+  is a fail-closed derived U/V frame, not a 3D GPU particle claim.
 - OSM South Col route/camp overlay (EV-OSM-002) served from `/api/everest/route`
 - Terrain, observation, and satellite API clients in `apps/web`
 - Rule-based Summit Window engine at `services/risk/`
