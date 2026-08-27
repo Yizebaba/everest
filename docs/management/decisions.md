@@ -72,9 +72,9 @@ parsing, normalization, QC, persistence, API, tests, docs, and review pass.
 
 ## ADR-EV-VIS-004: Cesium base-map replacement (World Imagery + World Terrain)
 
-**Date:** 2026-08-26  
+**Date:** 2026-08-26
 **Status:** Approved by Everest Manager (project owner granted permission to
-proceed)  
+proceed)
 **Scope:** Replace the Cesium scene base imagery from OSM raster tiles with
 **Cesium World Imagery** (ion-hosted Bing global imagery) and use **Cesium
 World Terrain** for 3D terrain, when `NEXT_PUBLIC_CESIUM_ION_TOKEN` is set in
@@ -122,9 +122,9 @@ for a specific commercial deployment.
 
 ## EV-VIS-006: Restore live data chain and overlay weather on the 3D scene
 
-**Date:** 2026-08-26  
+**Date:** 2026-08-26
 **Status:** Completed by Everest Manager authorization (user requested the 3D
-scene be made serviceable and show real weather data).  
+scene be made serviceable and show real weather data).
 **Scope:** The persistent runtime had been torn down, so the backend API and
 database were not serving data. Restored the chain and extended the Cesium scene
 with real weather overlays.
@@ -175,9 +175,9 @@ terms) are not claimed as verified.
 
 ## EV-VIS-007: Forecast data-pipeline refresh — stale data and missing fields
 
-**Date:** 2026-08-26  
+**Date:** 2026-08-26
 **Status:** Completed by Everest Manager authorization (user explicitly granted
-permission to bypass project-documentation limits and fix the data pipeline).  
+permission to bypass project-documentation limits and fix the data pipeline).
 **Root cause:** The database held only two old forecast records (ICON
 2026-08-21, IFS 2026-08-24), so the UI reported `stale basis (115 h)`, and the
 weather QC incorrectly flagged every provider that does not publish visibility
@@ -235,9 +235,9 @@ pre-fix QC rows; this is reproducible from `ingest_refresh.py`.
 
 ## EV-VIS-008: Mount weather data on the 3D scene (camp boards, wind particles, terrain picking)
 
-**Date:** 2026-08-26  
+**Date:** 2026-08-26
 **Status:** Completed by Everest Manager authorization (user requested these
-three concrete Cesium bindings).  
+three concrete Cesium bindings).
 **Scope:** Make the weather data actually visible in the 3D map.
 
 **1. Camp 3D floating boards (Billboard & Label).** The OSM South Col camps
@@ -274,9 +274,9 @@ typecheck/lint clean, 51 tests pass.
 
 ## EV-VIS-009: Cesium scene performance — requestRenderMode (4 → 60 FPS)
 
-**Date:** 2026-08-26  
+**Date:** 2026-08-26
 **Status:** Completed by Everest Manager authorization (user reported the map
-was "非常卡").  
+was "非常卡").
 **Root cause:** the scene rendered at ~4 FPS with the CPU idle. Diagnostics in
 headless Chromium: `TaskDuration` ~3 ms (CPU fine), but canvas
 `visibility:hidden` jumped FPS to 60 (rAF idle) while restoring the canvas
