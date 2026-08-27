@@ -6,10 +6,12 @@ from services.weather.gfs.ingestion import (
     GfsRawRetentionMetadata,
     compose_gfs_ingestion_adapter,
 )
+from services.weather.gfs.herbie_client import HerbieGfsClient
 
 __all__ = [
     "GfsCanonicalRecord",
     "GfsIngestionAdapter",
     "GfsRawRetentionMetadata",
+    "HerbieGfsClient",
     "compose_gfs_ingestion_adapter",
 ]

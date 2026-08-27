@@ -9,6 +9,7 @@ from services.weather.aifs.ingestion import (
     aifs_raw_retention_metadata_from_retrieval,
     compose_aifs_ingestion_adapter,
 )
+from services.weather.aifs.opendata_client import EcmwfAifsOpenDataClient
 from services.weather.aifs.normalizer import (
     AifsQualityEvidence,
     normalize_messages,
@@ -25,6 +26,7 @@ __all__ = [
     "AifsRawRetentionMetadata",
     "AifsQualityEvidence",
     "EcmwfAifsConnector",
+    "EcmwfAifsOpenDataClient",
     "aifs_raw_retention_metadata_from_artifact",
     "aifs_raw_retention_metadata_from_retrieval",
     "compose_aifs_ingestion_adapter",
