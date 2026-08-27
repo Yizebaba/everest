@@ -154,6 +154,7 @@ def test_herbie_client_uses_official_gfs_contract(tmp_path: Path) -> None:
     )
     artifact = HerbieGfsClient(herbie_factory=FakeHerbie).retrieve(request)
 
+    assert calls[0][1] == datetime(2026, 8, 27, 0)
     assert calls[0][2] == {
         "model": "gfs",
         "product": "pgrb2.0p25",

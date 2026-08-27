@@ -39,8 +39,12 @@ class HerbieGfsClient:  # pylint: disable=too-few-public-methods
     def retrieve(self, request: RetrievalRequest) -> RetrievedArtifact:
         """Download the request's fields and return verified local metadata."""
         request.target_dir.mkdir(parents=True, exist_ok=True)
+        # Herbie 2026.3.0 compares the requested datetime with a naive UTC
+        # archive date internally. Keep the Everest contract UTC-aware, but
+        # adapt at this third-party boundary to avoid aware/naive TypeError.
+        herbie_cycle = request.cycle.replace(tzinfo=None)
         client = self._factory(
-            request.cycle,
+            herbie_cycle,
             model="gfs",
             product="pgrb2.0p25",
             fxx=request.lead_hours,
