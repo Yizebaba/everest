@@ -1,9 +1,9 @@
-"""Everest RUNTIME-006 scheduler: retrieve the latest IFS/AIFS/GFS/ICON cycle
-and ingest into the persistent database every 6 hours (00/06/12/18 UTC).
+"""Everest RUNTIME-006 configuration-driven one-pass forecast scheduler.
 
 Runs inside WSL where ecCodes, PostgreSQL, and project code are available.
-Reuses the checked-in connectors, parser, normalizer, and
-WeatherIngestionService. Does not modify project source.
+IFS is enabled by default and retains its latest-cycle fallback. GFS, AIFS, and
+ICON are disabled extension seams until wrappers are explicitly supplied and
+enabled; this scheduler does not claim those sources are live.
 """
 
 # pylint: disable=wrong-import-position,wrong-import-order,import-outside-toplevel
@@ -26,6 +26,13 @@ from sqlalchemy.orm import sessionmaker  # noqa: E402
 
 from everest_api.raw_storage import RawStoragePolicy  # noqa: E402
 from everest_api.registry.models import DataSourceRegistryModel  # noqa: E402
+from everest_api.scheduler import (  # noqa: E402
+    ProviderJob,
+    RunStatus,
+    SchedulerConfig,
+    run_once,
+)
+from everest_api.scheduler.recording import DataSourceRunRecorder  # noqa: E402
 from everest_api.weather.service import WeatherIngestionService  # noqa: E402
 from services.weather.contract import (  # noqa: E402
     ForecastIdentity,
@@ -238,7 +245,11 @@ def _pressure_quality_flags(record) -> tuple[str, ...]:
 
 
 def _profile_quality_flags(
-    sample, cycle: datetime, lead_seconds: int, latitude: float, longitude: float
+    sample,
+    cycle: datetime,
+    lead_seconds: int,
+    latitude: float,
+    longitude: float,
 ) -> tuple[str, ...]:
     """Run the contract validator over one interpolated camp-height sample."""
     probe = WeatherRecord(
@@ -331,9 +342,7 @@ def _ingest_ifs_pressure(service, cycle: datetime, leads=PRESSURE_LEADS) -> int:
             print(f"  pressure +{lead}h unavailable ({exc}); skipping lead")
             continue
         messages = parse_pressure_messages(payload)
-        records = normalize_pressure_levels(
-            messages, LAT, LON, PRESSURE_LEVELS
-        )
+        records = normalize_pressure_levels(messages, LAT, LON, PRESSURE_LEVELS)
         digest = hashlib.sha256(payload).hexdigest()
         artifact_path = RAW_ROOT / "ecmwf-ifs" / digest / "pressure.grib2"
         artifact_path.parent.mkdir(parents=True, exist_ok=True)
@@ -390,8 +399,90 @@ def _ingest_ifs_pressure(service, cycle: datetime, leads=PRESSURE_LEADS) -> int:
     return count
 
 
+def _run_ifs_with_fallback(service) -> int:
+    """Run the existing IFS ingestion, retaining its previous-cycle fallback."""
+    cycle = datetime.now(UTC).replace(minute=0, second=0, microsecond=0)
+    hour = cycle.hour
+    cycle = cycle.replace(hour=hour - (hour % 6))  # snap to 00/06/12/18
+    # ECMWF publishes a cycle roughly 6-8 h after its nominal time, so the two
+    # most recent cycles are normally still absent. Walking back finds the
+    # newest published one; the timer is phased so that is usually cycle-8h.
+    last_error: Exception | None = None
+    for _ in range(8):
+        try:
+            print(f"ingesting IFS cycle {cycle.isoformat()}")
+            count = _ingest_ifs(service, cycle)
+            print(f"ingested {count} surface leads")
+            pressure_count = _ingest_ifs_pressure(service, cycle)
+            print(f"ingested {pressure_count} pressure records")
+            total = count + pressure_count
+            if total == 0:
+                # Preserve the prior behavior: an available cycle that yielded
+                # nothing is a failed IFS job, not a reason to ingest an older
+                # cycle and report the pass as current.
+                raise _EmptyIfsCycle(
+                    f"IFS cycle {cycle.isoformat()} yielded no records"
+                )
+            return total
+        except _EmptyIfsCycle:
+            raise
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            last_error = exc
+            print(
+                f"cycle {cycle.isoformat()} unavailable ({exc}); trying previous"
+            )
+            cycle = cycle - timedelta(hours=6)
+    raise RuntimeError(
+        "no recent IFS cycle available in the last 48 h"
+    ) from last_error
+
+
+class _EmptyIfsCycle(RuntimeError):
+    """An available IFS cycle completed but produced no canonical records."""
+
+
+def _unwired_provider(source_id: str):
+    """Create an explicit disabled-by-default extension seam, not a live claim."""
+
+    def _run() -> int:
+        raise RuntimeError(
+            f"{source_id} scheduler wrapper is enabled but not configured"
+        )
+
+    return _run
+
+
+def build_provider_jobs(
+    config: SchedulerConfig,
+    ifs_job,
+    *,
+    gfs_job=None,
+    aifs_job=None,
+    icon_job=None,
+) -> tuple[ProviderJob, ...]:
+    """Compose source callables; optional wrappers must be explicitly enabled."""
+    return (
+        ProviderJob("ecmwf-ifs", ifs_job, config.ifs_enabled),
+        ProviderJob(
+            "noaa-gfs",
+            gfs_job or _unwired_provider("noaa-gfs"),
+            config.gfs_enabled,
+        ),
+        ProviderJob(
+            "ecmwf-aifs",
+            aifs_job or _unwired_provider("ecmwf-aifs"),
+            config.aifs_enabled,
+        ),
+        ProviderJob(
+            "dwd-icon",
+            icon_job or _unwired_provider("dwd-icon"),
+            config.icon_enabled,
+        ),
+    )
+
+
 def main() -> int:
-    """Run one scheduler pass: surface + pressure ingestion for the latest cycle.
+    """Run one configured provider pass with source-specific accounting.
 
     Returns a process exit status. Every failure path used to return 0, so
     systemd recorded ``Result=success`` even when nothing was ingested and
@@ -407,30 +498,18 @@ def main() -> int:
     service = WeatherIngestionService(factory, policy)
     with factory() as session:
         _seed(session)
-    cycle = datetime.now(UTC).replace(minute=0, second=0, microsecond=0)
-    hour = cycle.hour
-    cycle = cycle.replace(hour=hour - (hour % 6))  # snap to 00/06/12/18
-    # ECMWF publishes a cycle roughly 6-8 h after its nominal time, so the two
-    # most recent cycles are normally still absent. Walking back finds the
-    # newest published one; the timer is phased so that is usually cycle-8h.
-    for _ in range(8):
-        try:
-            print(f"ingesting IFS cycle {cycle.isoformat()}")
-            count = _ingest_ifs(service, cycle)
-            print(f"ingested {count} surface leads")
-            pcount = _ingest_ifs_pressure(service, cycle)
-            print(f"ingested {pcount} pressure records")
-            if count == 0 and pcount == 0:
-                print(f"cycle {cycle.isoformat()} yielded no records")
-                return 1
-            return 0
-        except Exception as exc:  # pylint: disable=broad-exception-caught
-            # provider latency: retry previous cycles until one publishes
-            print(
-                f"cycle {cycle.isoformat()} unavailable ({exc}); trying previous"
-            )
-            cycle = cycle - timedelta(hours=6)
-    print("no recent cycle available in the last 48 h; this run ingested nothing")
+    config = SchedulerConfig.from_environment()
+    jobs = build_provider_jobs(config, lambda: _run_ifs_with_fallback(service))
+    result = run_once(jobs, recorder=DataSourceRunRecorder(factory))
+    print(
+        f"scheduler {result.status.value}: attempted={result.attempted_sources} "
+        f"succeeded={result.succeeded_sources} failed={result.failed_sources} "
+        f"skipped={result.skipped_sources} records={result.records_ingested}"
+    )
+    if result.status is RunStatus.SUCCESS:
+        return 0
+    if result.status is RunStatus.DEGRADED:
+        return 2
     return 1
 
 

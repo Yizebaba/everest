@@ -21,6 +21,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import RequestResponseEndpoint
 
 from everest_api.registry.models import DataSourceRegistryModel
+from everest_api.risk import assess_summit_window
 from everest_api.osm.models import OsmFeatureModel
 from everest_api.sources.models import (
     AwsObservationModel,
@@ -331,6 +332,13 @@ def create_app(
             ]
         }
 
+    @app.get("/api/risk/summit-window")
+    def summit_window_risk(
+        session: Session = Depends(get_session),
+    ) -> dict[str, object]:
+        """Assess the best persisted canonical summit basis; never fetch data."""
+        return {"risk": assess_summit_window(session)}
+
     @app.get("/healthz")
     def liveness() -> dict[str, str]:
         """Process liveness: the API process is up (no dependency probe)."""
@@ -401,8 +409,9 @@ def create_app(
         """
         correlation(response, correlation_id)
         rows = session.scalars(
-            select(OsmFeatureModel)
-            .order_by(OsmFeatureModel.feature_kind, OsmFeatureModel.sequence)
+            select(OsmFeatureModel).order_by(
+                OsmFeatureModel.feature_kind, OsmFeatureModel.sequence
+            )
         ).all()
         camps = [
             {
