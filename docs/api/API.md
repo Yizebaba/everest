@@ -2,10 +2,12 @@
 
 ## Phase C status
 
-This document reserves API contracts only. Phase A implements no HTTP routes.
-Controllers added in a later phase must call the registry application service,
-never repositories or external providers directly. No endpoint may claim source
-verification or health without operational evidence.
+Phase A reserved contracts and implemented no HTTP routes. That sentence is
+historical. HEAD implements the five weather/health routes plus terrain,
+observations, satellite, Everest route, `/healthz`, and `/readyz` (see
+Implemented routes below). Controllers still call the registry application
+service, never repositories or external providers directly. No endpoint may
+claim source verification or health without operational evidence.
 
 All future responses use UTF-8 JSON, UTC ISO-8601 timestamps, and an optional
 `X-Correlation-ID` request header echoed in responses and structured logs.
@@ -53,10 +55,10 @@ must match the descriptor. This is a read/hash check only; it does not acquire,
 write, move, copy, or delete raw artifacts. Metadata and checksum-sidecar
 verification remains provider-owned. Provider attestations crossing this
 boundary must be scalar descriptor metadata, never provider objects. Filesystem
-access control and physical disposition remain storage-owner controls. This
-checkout has no Git
-repository metadata; consequently, no repository-exclusion or `.gitignore`
-claim is made here.
+access control and physical disposition remain storage-owner controls. The
+2026-08-22 snapshot had no Git metadata. This checkout has `.git` and remote
+`Yizebaba/everest`; repository-exclusion evidence is recorded under GIT-003
+and Gate C-Operational, not claimed by this contract.
 
 ## Raw retention and audit (internal only)
 
@@ -158,10 +160,43 @@ presence.
 station/pixel identity required for provenance and deduplication; it is not a
 raw-storage reference. Datetimes are emitted as UTC ISO-8601 `Z` values.
 
+## Implemented routes (HEAD, 2026-08-27)
+
+Live FastAPI GET routes in `apps/api/everest_api/app.py`, in addition to the
+five weather/health contracts above:
+
+| Route | Purpose |
+| --- | --- |
+| `GET /api/terrain/tile` | AOI terrain tile metadata (`min_elevation`, `max_elevation`, bounds, CRS) |
+| `GET /api/observations/current` | Current observation records (includes `relative_humidity`) |
+| `GET /api/satellite/segments` | Satellite segment listing; optional `band` filter |
+| `GET /api/everest/route` | OSM South Col route polyline and camp points (EV-OSM-002) |
+| `GET /api/risk/summit-window` | Read-only assessment from the existing Python Risk Engine using the newest persisted SUMMIT basis |
+| `GET /api/weather/wind-field` | Latest integrity-checked, AOI-bounded derived U/V frame; explicit unavailable response when not materialized |
+| `GET /healthz` | Process liveness |
+| `GET /readyz` | Readiness (database reachable) |
+
+CORS default origins remain `http://localhost:42420` and
+`http://localhost:52148`. The frontend Cesium scene may use a local
+NaturalEarthII TMS under `/cesium/` as an offline basemap fallback; that is
+not an Everest REST route.
+
 The same canonical response projection is used by current, forecast, and
 profile records. Its explicit public allow-list excludes record/raw object
 identifiers, dataset/raw paths, provider URLs, hashes, raw metadata, retention,
 hold, disposition, and audit fields.
+
+`/api/weather/wind-field` is an additive visualization projection and is not a
+new canonical weather contract or ADR-015 evidence route. The GET handler never
+contacts a provider or decodes GRIB. The scheduler derives a native-grid 400 hPa
+frame from an already retained IFS pressure artifact with `cfgrib`/`xarray`,
+clips it to the approved 100 km AOI envelope without interpolation, and
+publishes it atomically under the configured external derived root.
+
+`/api/risk/summit-window` reads PostgreSQL only and calls
+`services/risk/engine.py`. Its `go`, `caution`, `block`, and `unknown` values are
+the backend engine contract; the frontend may localize `block` as `STOP` but
+must not rescore weather independently.
 
 ## ADR-015 retained endpoint evidence inventory
 

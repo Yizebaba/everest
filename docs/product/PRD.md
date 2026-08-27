@@ -3,8 +3,8 @@
 **Delivery line:** EV-UI-001 — Frontend UI (deferred EV-DATA-001 A-F display)
 **Status:** In `/plan-ceo-review` — 5 scope expansions adopted 2026-08-24
 **Author:** Product (Everest Manager board) — `docs/management/board.md`
-**Last Updated:** 2026-08-24
-**Version:** 0.2
+**Last Updated:** 2026-08-27
+**Version:** 0.3
 **Stakeholders:** Everest Manager, Architect, GIS/3D, Meteorology, Backend, Frontend, QA, Release
 **Authorization:** ADR-017 (`docs/management/decisions.md`) — approved 2026-08-24
 **Lifecycle stage:** `/plan-ceo-review` (in progress; expansions adopted). Stages follow `AGENTS.md`:
@@ -22,11 +22,14 @@ reads — from Everest-owned data only — the current weather, the multi-model
 forecast timeline, the vertical profile across the south-route camps, and the
 health of the data sources behind every number. No browser ever dials ECMWF,
 NOAA, DWD, or any other external provider: every value on screen comes from the
-five Everest REST APIs built and tested in EV-DATA-001. Milestone 1 delivers
-the read-only weather/forecast display surface. Terrain tiles, satellite
-layers, observations, OSM, AI, and Risk remain later, separately authorized
-milestones. The screen tells the truth about the data — including when there is
-no data.
+five Everest REST APIs built and tested in EV-DATA-001. Milestone 1 delivered
+the read-only weather/forecast display surface. HEAD now also includes the
+Cesium 3D scene, OSM South Col route/camp overlay (EV-OSM-002), terrain /
+observation / satellite REST routes, and a rule-based Summit Window engine at
+`services/risk/`. Remaining separately scoped work is production/shared
+deployment (Gate C-Operational), EV-OSM-001 vector basemap, EV-TERRAIN-002 3D
+Tiles, EV-SAT-002 additional satellite, and persisted ADR-019 ingestion. The
+screen tells the truth about the data — including when there is no data.
 
 ## 2. Problem Statement
 
@@ -40,7 +43,8 @@ The data foundation already exists: EV-DATA-001 A-F produced a canonical
 weather model in PostgreSQL and five backend REST APIs that return real
 canonical records (forecast is retained-evidenced; the other four routes are
 implemented with an accepted historical evidence gap — ADR-015/ADR-016). What
-does not exist is any way for a human to see that data. There is no UI.
+did not exist at the 2026-08-24 PRD cut is any way for a human to see that
+data. HEAD now has the Next.js + Cesium UI in `apps/web`.
 
 The cost of not solving this: the Everest data pipeline produces canonical
 weather records that no one can read; Summit Window decisions continue to be
@@ -104,36 +108,40 @@ live service.
 
 ## 5. Non-Goals / Out of Scope
 
-### Explicitly out of scope for the EV-UI-001 MVP
+### Explicitly out of scope for the original EV-UI-001 MVP (2026-08-24)
 
-- **Satellite layers** (Himawari-8/9, Sentinel-1/2, Landsat 8/9) — future
-  milestone (line `EV-SAT-001`), not built now.
+The bullets below are the original MVP non-goals. They are **not** a claim
+that HEAD still lacks these surfaces. Current-state notes follow each item.
+
+- **Satellite layers** (Himawari-8/9, Sentinel-1/2, Landsat 8/9) — original
+  MVP deferred `EV-SAT-001`. HEAD serves `/api/satellite/segments` and a local
+  RGB overlay; EV-SAT-002 additional satellite remains separately scoped.
 - **Terrain overlays beyond a baseline scene** (Copernicus DEM GLO-30 tiles,
-  3D Tiles terrain service, PostGIS terrain pipeline) — separate line
-  `EV-TERRAIN-001`; the MVP must not depend on it and must not call external
-  terrain/imagery providers.
-- **Route/camp geometry on the map** — the approved data set contains no route
-  line or camp point geometry, and connectors/UI must not invent coordinates.
-  Camp labels are filter labels only (see FR-MAP-004).
-- **Observations** (Everest AWS, Pyramid network) — lines
-  `EV-AWS-STATION-001` / `EV-PYRAMID-001`, later milestones; the MVP renders
-  `observation` records only if they already exist in the API surface.
-- **OpenStreetMap / environmental layers** — future milestone, not built now.
-- **AI and Risk** — the Risk engine is not in scope; the Summit Window
-  indicator is a transparent presentation of canonical values, never a Risk or
-  AI prediction.
-- **Multi-language UI** — English only in MVP; architecture must be i18n-ready
-  (NFR-I18N-001).
-- **Write/control features** — the frontend is read-only. No configuration,
-  ingestion triggering, raw-data access, admin mutation, or data-source
-  management UI.
-- **WebSocket live streams** — the five documented APIs are REST; live-stream
-  display is an architecture open question, not an MVP requirement.
-- **New backend endpoints** — the MVP consumes exactly the five existing APIs
-  and invents no endpoints.
-- **Production deployment / GA** — release is blocked by Gate C-Operational
-  (ADR-013/ADR-017); this delivery ends at validated, reviewed, QA-accepted
-  UI against a controlled environment.
+  3D Tiles terrain service, PostGIS terrain pipeline) — original MVP deferred
+  `EV-TERRAIN-001`. HEAD serves `/api/terrain/tile`; Cesium World Terrain is
+  optional via ion token; EV-TERRAIN-002 3D Tiles remains separately scoped.
+- **Route/camp geometry on the map** — original MVP forbade invented
+  coordinates. HEAD overlays OSM South Col route/camps from
+  `/api/everest/route` (EV-OSM-002).
+- **Observations** (Everest AWS, Pyramid network) — original MVP deferred
+  `EV-AWS-STATION-001` / `EV-PYRAMID-001`. HEAD serves
+  `/api/observations/current`.
+- **OpenStreetMap / environmental layers** — original MVP deferred OSM.
+  HEAD has EV-OSM-002 South Col overlay; EV-OSM-001 vector basemap remains
+  separately scoped. Local NaturalEarthII TMS is the offline globe fallback.
+- **AI and Risk** — original MVP kept Summit Window as presentation-only.
+  HEAD has a rule-based engine at `services/risk/` (not AI). The UI STOP
+  label maps to engine BLOCK.
+- **Multi-language UI** — original MVP was English-only. Phase 1 was explicitly
+  expanded by the Everest Manager on 2026-08-27 to `en | zh` with one typed
+  message catalog shape and a top navigation switch.
+- **Write/control features** — the frontend is read-only. Unchanged.
+- **WebSocket live streams** — REST only. Unchanged.
+- **New backend endpoints** — original MVP consumed exactly the five weather
+  APIs. HEAD also serves terrain, observations, satellite, Everest route,
+  `/healthz`, and `/readyz`.
+- **Production deployment / GA** — still blocked by Gate C-Operational
+  (ADR-013/ADR-017). Local UI against a controlled environment is in HEAD.
 
 ## 6. Target Users and Personas
 
@@ -517,9 +525,10 @@ labels, never hides records, and never imputes values.
 
 ### Internationalization readiness
 
-- **NFR-I18N-001** — User-facing strings live in a message catalog with no
-  hard-coded UI text in components, so a future language milestone can ship
-  without refactoring. MVP displays English only.
+- **NFR-I18N-001** — User-facing Phase 1 strings live in a typed message catalog
+  with matching English and Chinese keys. Switching locale updates visible
+  labels, accessible names, and `document.documentElement.lang`; canonical
+  units, provider/model IDs, coordinates, and data values never change.
 
 ### Engineering standards
 

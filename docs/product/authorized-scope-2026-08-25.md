@@ -29,9 +29,12 @@ The frontend never calls an external provider.
 
 ## EV-RISK-001 — Risk engine (new module)
 
-- **Status**: `services/risk/` does **not** exist. This is a **new** module,
-  not a modification of any tested engine. `AGENTS.md` forbids modifying a
-  tested Risk Engine; building a new one is a separate authorization.
+- **Status (2026-08-25 authorization)**: `services/risk/` did **not** exist
+  at authorization time. HEAD now has `services/risk/engine.py`,
+  `services/risk/tests/test_risk.py`, `apps/api/risk_assess.py`, and the
+  read-only API adapter under `apps/api/everest_api/risk/`. This is a rule-based
+  module, not AI. The 2026-08-25 text is the authorization, not a claim that the
+  directory is still absent.
 - **What it would do**: a transparent, configurable rule-based assessment that
   combines canonical weather values (wind/temp/precip) at Summit/camp altitudes
   into a Summit Window indicator. **Explicitly not AI**, not a black-box
@@ -68,6 +71,28 @@ The frontend never calls an external provider.
 - **Acceptance**: a 3D Tiles tileset from the retained GLO-30 tile served to
   the Cesium scene over the approved API path; PostGIS spatial index and a
   queryable profile endpoint; tests, docs, QA.
+
+---
+
+## Current-state note (2026-08-27)
+
+This document is the 2026-08-25 authorization, not a live inventory. HEAD
+already contains:
+
+- EV-OSM-002 South Col route/camp overlay (`GET /api/everest/route`)
+- `GET /api/terrain/tile`, `GET /api/observations/current`,
+  `GET /api/satellite/segments`
+- `services/risk/` rule engine (EV-RISK-001 code present; UI STOP maps to
+  engine BLOCK)
+- Phase 1 official-client adapters for GFS, IFS, and AIFS; optional GFS/AIFS/
+  ICON scheduler jobs remain disabled by default until the ingestion extras are
+  installed and each source is operationally enabled
+- additive `/api/risk/summit-window` and `/api/weather/wind-field` routes;
+  neither changes the historical ADR-015 five-route acceptance surface
+
+Still separately scoped: EV-OSM-001 vector basemap, EV-TERRAIN-002 3D Tiles,
+EV-SAT-002 additional satellite, persisted ADR-019 ingestion, and
+Gate C-Operational production/shared deployment.
 
 ---
 

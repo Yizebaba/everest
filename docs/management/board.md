@@ -31,15 +31,33 @@
 
 ## Delivery Stop
 
-**Current delivery status: STOPPED with an accepted historical ADR-015 evidence
-limitation.** The source/core work remains historically accepted. The exact
-five-route display criterion is not proven: forecast is evidenced; current,
-profile, sources, and data-health are not. No database/provider/service rerun is
-authorized solely for documentation closure. No additional data
-domains, frontend work, release, production/shared deployment, UI, database or
-provider rerun, or raw-artifact operation is authorized. Work may resume only
-after a new explicit Everest Manager instruction and the required governance
-stages.
+**Historical A-F status (2026-08-22): STOPPED with an accepted historical
+ADR-015 evidence limitation.** That stop described the A-F source/core close-out.
+It is not the current tree. The source/core work remains historically accepted.
+The exact five-route display criterion was not proven in the 2026-08-22
+inventory: forecast was evidenced; current, profile, sources, and data-health
+were not. That inventory is historical; it is not a claim that those routes are
+absent from HEAD.
+
+## Current workspace state (2026-08-27)
+
+This checkout **is** a Git repository (authoritative remote `Yizebaba/everest`,
+branch `main`). HEAD includes:
+
+- Next.js 15 + Cesium dashboard in `apps/web` (dev port 52148)
+- FastAPI in `apps/api` (dev port 52147) with live GET routes:
+  `/api/weather/current`, `/api/weather/forecast`, `/api/weather/profile`,
+  `/api/weather/sources`, `/api/data-health`, `/api/terrain/tile`,
+  `/api/observations/current`, `/api/satellite/segments`, `/api/everest/route`,
+  `/healthz`, `/readyz`
+- OSM South Col route/camp overlay (EV-OSM-002) served from `/api/everest/route`
+- Terrain, observation, and satellite API clients in `apps/web`
+- Rule-based Summit Window engine at `services/risk/`
+- Persistent PostgreSQL on port 56021 (ADR-020)
+
+Gate C-Operational still blocks **production/shared** deployment. That is not a
+reason the local 3D scene is blank, and it is not a prohibition on fixing the
+local UI.
 
 ## Post-A-F Roadmap
 
@@ -57,12 +75,13 @@ stages.
 | EV-GATEC-OP-QA-009 | Independent operational QA | COMPLETE (2026-08-25): PASS for recorded nonproduction runtime; live probes + block evidence re-confirmed | Blocks 1-8 | `docs/qa/test-plan.md` |
 | EV-GATEC-OP-RELEASE-010 | Release gate definition | DEFINED + Manager decision recorded 2026-08-25: WSL/Docker local runtime (API 52147, frontend 52148, PG 56021), not public; RELEASE-010-STATUS update records Gate C progression (TMP-004 complete, GIT-003 QA accepted, B1 partial, B2 canary pending); CloudTrail delivery confirmed; no shared/production deployment | Gate C-Operational QA pass (QA-009) | `docs/architecture/EV-GATEC-OP-RELEASE-010.md`, `docs/management/decisions.md` |
 
-Only one block may be `in progress`. The read-only frontend is now integrated
+Only one block may be `in progress`. The read-only frontend is integrated
 (port 52148, CORS-verified); GIS-3D/Cesium scene exists in `apps/web`; ADR-019
 sources (terrain, Everest AWS station, Himawari satellite) are `connected` with
-QA-recorded connected-scope PASS. OSM, Risk, additional satellite/terrain, and
-persisted ADR-019 record ingestion into the running database remain future,
-separately authorized work.
+QA-recorded connected-scope PASS. OSM South Col overlay (EV-OSM-002) and
+`services/risk/` are in HEAD. Additional satellite/terrain (EV-SAT-002 /
+EV-TERRAIN-002) and persisted ADR-019 record ingestion into the running
+database remain separately scoped.
 
 ### ADR-015 endpoint evidence boundary
 
@@ -105,15 +124,19 @@ against that specification:
   board and the authoritative current domain/QA handoffs. ADR-015 endpoint
   evidence inventory and QA are complete; they do not claim the missing four
   routes were proven.
-- No AWS, Pyramid, satellite, terrain, OSM, AI, Risk, or UI work was started.
-- Existing project-root `tmp-icon*`/`tmp-gfs*` artifacts remain untouched.
+- As of the 2026-08-22 A-F close-out, no AWS, Pyramid, satellite, terrain, OSM,
+  AI, Risk, or UI work had started. That sentence is historical. HEAD now has
+  the Cesium UI, OSM South Col overlay, terrain/obs/satellite routes, and
+  `services/risk/`.
+- Existing project-root `tmp-icon*`/`tmp-gfs*` artifacts were later relocated
+  under EV-GATEC-OP-TMP-004; see that block.
 
 **A-F source/core chain: PASS as historical disposable evidence.**
 **Authoritative AIFS evidence: `final66` / `AIFS4` / `met37` / port `46901`.**
-**EV-DATA-001 delivery closure: STOPPED by Manager confirmation and controlling
-QA record `EV-DATA-001-F-QA-STOP`.**
-**Live service / production / Gate C-Operational: not claimed.**
-**New UI: not authorized and not implemented.**
+**EV-DATA-001 A-F delivery closure: historically STOPPED by Manager confirmation
+and controlling QA record `EV-DATA-001-F-QA-STOP`.**
+**Live production / Gate C-Operational: not claimed.**
+**UI: implemented in `apps/web` (Next.js + Cesium). See Current workspace state.**
 
 ## Delivery Boundary
 
@@ -153,8 +176,9 @@ the official-documents/logs procedure before retrying.
 Current audit conclusion: A-D remain historically documented and Phase E is
 accepted at Gate C-Core on historical disposable evidence. ICON's in-run
 `verified`/`healthy` state is historical; current health and API availability
-are unknown after teardown. The workspace is not a Git checkout; project-root
-`tmp-icon*`/`tmp-gfs*` raw artifacts remain untouched and noncompliant. Gate
+are unknown after teardown. The 2026-08-22 audit recorded no Git metadata;
+this checkout now has `.git` and remote `Yizebaba/everest`. Project-root
+`tmp-icon*`/`tmp-gfs*` raw artifacts were later relocated under TMP-004. Gate
 C-Operational remains open for production/shared deployment, automatic
 disposition, and production-grade retention claims. Phase E post-review
 evidence and finding dispositions are recorded; AIFS remains pending and is not
@@ -174,8 +198,8 @@ deployment, automatic disposition, and production-grade retention claims.
   scan includes build-copy duplicate code and declarative ORM/DTO findings.
 - `D:\Everest-data\raw`, `docs/everest-aoi.md`, and `docs/weather-spec.md`
   exist.
-- The workspace has no `.git` metadata; Git tracking/exclusion evidence is not
-  available here.
+- The 2026-08-22 snapshot had no `.git` metadata. This checkout has `.git` and
+  remote `Yizebaba/everest`; GIT-003 later recorded exclusion evidence.
 - No identical root-cause failure signature is evidenced at three occurrences;
   the repeated-failure escalation rule has not required a fourth-attempt pause
   during this audit.
@@ -505,3 +529,4 @@ lifecycle; frontend never calls external providers.
 | EV-VIS-012 | `/api/weather/current` returns one row per series instead of the 100 newest valid times | backend | **COMPLETE (2026-08-26):** the route the dashboard labels "current" was `order_by(timestamp.desc()).limit(100)`. Once forecast leads are persisted alongside surface fields that is not "current" — the hundred newest valid times were all pressure-level rows up to three days out, so the response the UI reads carried **0** rows with visibility while `/api/weather/forecast` carried 3, and no surface field could ever appear. `WeatherQueryService.current` now ranks per series — one (source, dataset, spatial key), i.e. one pressure level, interpolated camp, or surface grid point — and returns each series' most recent already-valid record, falling back to its soonest upcoming record when a series has nothing in the past yet; results are ordered nearest-the-present first, then ground-up, so a caller showing only the first few rows shows the most current ones. Response size is now a function of the grid rather than of how many leads have been ingested: **15 rows** against the served store, all at the hour nearest now, with the GFS surface row (`vis 40 m`) 6th — inside the six `CurrentWeatherPanel` renders. Four PostgreSQL tests cover per-series selection, the surface row a far lead used to hide, the future-only fallback, and the source filter. | `apps/api/everest_api/weather/service.py`, `apps/api/tests/test_weather_queries.py` |
 | EV-OPS-001 | Test fixture could target the served database; served store was wiped and rebuilt | backend + Everest Manager | **INCIDENT + FIX (2026-08-26).** While running the new PostgreSQL query tests I pointed `EVEREST_TEST_DATABASE_URL` at a disposable database, but `apps/api/alembic/env.py` **unconditionally overwrote** `sqlalchemy.url` with `resolve_database_url()`, so both the fixture's `upgrade head` and its teardown `downgrade base` ran against the served `everest` database and **dropped every table**. The loss was total for canonical rows and recoverable in full because nothing in that store is primary: raw GRIB artifacts are retained under `/mnt/d/Everest-data/raw` and every other row re-derives from providers. Recovery: `alembic upgrade head` (to `20260826_0010`), then `ingest_osm_route.py` (365 OSM features), `ingest_adr019.py` (terrain/observation/satellite), `ingest_refresh.py` (IFS surface + GFS visibility), `schedule_forecast.py` (forecast + 6 pressure levels + 6 camps per lead). The rebuilt store carries 167 weather records across 25 leads, 66 route-profile rows, 3 with GFS visibility, 365 OSM features, and one terrain/observation/satellite row each; `/api/weather/current` answers with the same 15 series it did before the loss, spanning 1517 m to 9797 m. Two forecast leads (+66h, +72h) were dropped by the provider with `HTTP 429 Too Many Requests` during the rebuild and are simply absent rather than filled — a later scheduler pass will pick them up. Two fixes so it cannot recur: `env.py` now honours an explicitly configured `sqlalchemy.url` and only falls back to the shared resolver, and `apps/api/tests/conftest.py` fails closed when `EVEREST_TEST_DATABASE_URL` names the same host/port/database the deployment serves — asserted with synthetic URLs rather than by pointing a real run at a real store. The `env.py` fix was then verified by re-running the query tests with the deployment variables removed from the environment altogether: the suite passed against the scratch database, which it could only do if the explicitly configured URL was honoured — an unconditional override would have raised `RuntimeError` from the resolver instead. Recorded here rather than quietly repaired because the fixture-vs-deployment collision was a latent landmine for anyone who ran the integration suite on a machine with `EVEREST_DB_*` set. | `apps/api/alembic/env.py`, `apps/api/tests/conftest.py` |
 | EV-ENV-OSM-AI-RISK | Environmental / OSM / AI / Risk | OSM base layer COMPLETE (EV-OSM-001); **OSM South Col route + camps COMPLETE (EV-OSM-002, 2026-08-26)** — Overpass connector (approved OSM source) fetches allowlisted South Col camps (EBC, C1S-C4S) and the 359-vertex route polyline (relation 17822898), persisted to `osm_feature` (migration 0009) via `OsmFeatureService.sync`, served by `GET /api/everest/route`, rendered on the Cesium scene as amber camp labels + clamped ground polyline; registry seeded `osm-overpass` (connected); 9 new backend tests + 5 frontend validator tests pass; Risk engine COMPLETE (EV-RISK-001, rules-only, non-AI); AI / additional environmental layers remain future | individually scoped | - |
+| EV-PHASE1-GLUE | Open-source weather/domain glue Phase 1 | backend + meteorology + frontend + gis-3d | **IMPLEMENTED / GPU FALLBACK RECORDED (2026-08-27):** official-doc review pinned xarray 2026.07.0, cfgrib 0.9.15.x, netCDF4 1.7.4, Herbie 2026.3.0, ecmwf-opendata 0.3.34; GFS Herbie wrapper reached official NOMADS inventory for 2026-08-27 00Z F00, ECMWF official client reported IFS 00Z and AIFS Single 06Z latest cycles, and DWD Open Data root was reachable. Provider jobs for GFS/AIFS/ICON are implemented but disabled by default; only IFS remains enabled in systemd. Scheduler materializes a real native-grid 400 hPa IFS U/V frame from retained GRIB through cfgrib/xarray, clipped to the approved 100 km AOI envelope, and serves it read-only at `/api/weather/wind-field`; real retained smoke: cycle 2026-08-27 00Z, valid 2026-08-28 06Z, 7×8 grid (56 points), lat 27.25..28.75, lon 86.0..87.75, 2711-byte content-addressed JSON. `/api/risk/summit-window` calls the existing Python engine over persisted SUMMIT data. Frontend includes ten typed domain views, `en|zh`, real route/camp selection and nearest-grid Weather/Risk panel. RaymanNg 3D-Wind-Field is pinned as MIT reference at `ddbbca1`; full GPU compute/render remains disabled because Cesium 1.144 does not document the required frame-state command-list extension. Capability/data/lifecycle boundary is implemented and falls back truthfully to the existing lightweight particles. | ADR-015 contracts preserved; optional ingestion extras must be installed before enabling GFS/AIFS/ICON | `apps/api/pyproject.toml`, `services/weather/retrieval.py`, `apps/api/everest_api/scheduler/`, `apps/api/everest_api/risk/`, `services/weather/wind_field.py`, `apps/web/src/types/schema.ts`, `apps/web/src/cesium/wind/`, `apps/web/THIRD_PARTY_NOTICES` |

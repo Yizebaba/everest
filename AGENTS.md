@@ -558,3 +558,55 @@ claim must identify the real UTC data time and parsed variable count, including
 an Everest-area coordinate such as `27.9881, 86.9250`.
 
 > 中文说明：四个预报源完成后，必须提交 Phase-F 报告，列出真实成功/失败来源、官方 URL、格式、更新频率、下载大小、数据库表、API、测试结果、许可证、延迟、珠峰覆盖范围和下一阶段建议。任何成功结论都必须带实际 UTC 数据时间、解析变量数和珠峰区域坐标，例如 `27.9881, 86.9250`。
+
+
+## Everest OS - 10-Dimension Domain Architecture (Phase 1)
+
+**Approved:** 2026-08-27 (Everest Manager). Phase 1 defines presentation/domain
+views over the existing canonical API contracts and reserves interfaces;
+existing 3D rendering and API request logic must remain fully operational.
+
+### Domains (TypeScript presentation contracts in `apps/web/src/types/schema.ts`)
+
+1. Environment - running context (Everest / cave / mine / wilderness); Everest only now.
+2. Terrain - DEM / elevation / slope / terrain profile (GLO-30 API + Cesium terrain).
+3. Weather - multi-source canonical API records plus bounded derived U/V wind frames.
+4. Sensor - hardware/station data (AWS / Pyramid / custom nodes); reserved/empty.
+5. Route - real OSM South Col route and camp nodes from the Everest API.
+6. Hazard - crevasses, avalanche zones; reserved/empty.
+7. Risk - existing deterministic Python Risk Engine exposed through the Everest API; no AI.
+8. Communication - link states (satellite / mesh / 4g / offline); reserved/empty.
+9. Device - bound terminal devices; reserved/empty.
+10. Mission - task context; reserved/empty.
+
+### Module mapping
+
+- `apps/web/src/domains/terrain.ts` wraps the existing GLO-30 terrain API.
+- `apps/web/src/domains/weather.ts` wraps validated canonical weather responses.
+- `apps/web/src/domains/risk.ts` adapts the backend Risk Engine response; it
+  must not duplicate the scoring algorithm in TypeScript.
+- Reserved domains return explicit `reserved`/empty states, never fabricated
+  operational readings, devices, links, hazards, or missions.
+
+### Internationalization
+
+- locale: 'en' | 'zh' reserved in the Environment domain.
+- Bilingual catalog for core terms (temperature, wind speed, visibility,
+  precipitation, Summit Window, GO/STOP) in `apps/web/src/i18n/messages.ts`.
+- Language switch exposed in the top navigation bar.
+
+### Constraints (unchanged)
+
+The Everest OS abstraction must not: call external providers from the
+frontend, invent geometry or data, remove V2 features, modify a tested Risk
+Engine beyond presentation-layer semantics, build AI, or change canonical
+weather field meanings.
+
+Weather retrieval and decoding use reviewed open-source adapters. Existing
+direct ecCodes parsers remain canonical-ingestion fallbacks. The MIT
+`RaymanNg/3D-Wind-Field` project is pinned as a reference at commit
+`ddbbca160c14b5fe081fdd5c2e3dcd05718dba66`; its demo application, provider
+calls, NetCDF browser loader, and GUI are not copied. GPU rendering may only be
+enabled through verified Cesium public APIs. If that boundary is unavailable,
+the product must report fallback status and retain the existing lightweight
+particle renderer rather than use undocumented renderer internals.

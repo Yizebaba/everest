@@ -85,8 +85,9 @@
 - Pylint currently reports `9.92/10`; the required quality gate is not green.
 - `D:\Everest-data\raw`, `docs/everest-aoi.md`, and `docs/weather-spec.md`
   exist.
-- The workspace is not a Git checkout. Raw tracking/exclusion and history
-  evidence cannot be verified here.
+- The 2026-08-22 snapshot was not a Git checkout. This checkout has `.git`
+  and remote `Yizebaba/everest`; GIT-003 later recorded exclusion evidence.
+  The historical Gate C raw-root check is unchanged.
 - Existing project-root `tmp-icon*` and `tmp-gfs*` artifacts remain untouched
   and are not compliant durable raw storage.
 
@@ -671,8 +672,9 @@ canonical metadata, and metadata-sidecar integrity logic and unit coverage.
 Those facts are not sufficient for closure: no real connector artifact set has
 been retained under `D:\Everest-data\raw` for this assignment, retention/access/
 legal-hold/audit/disposition controls are documented but not runtime-proven,
-and repository exclusion cannot be verified because this checkout has no Git
-metadata. The existing project-root `tmp-icon*` and `tmp-gfs*` artifacts remain
+and repository exclusion could not be verified in that snapshot because it
+had no Git metadata. This checkout has `.git` and remote `Yizebaba/everest`.
+The existing project-root `tmp-icon*` and `tmp-gfs*` artifacts remain
 explicitly noncompliant and were not touched.
 
 ## Evidence reviewed
@@ -719,7 +721,7 @@ explicitly noncompliant and were not touched.
 | Exact check | Result | Evidence / limitation |
 | --- | --- | --- |
 | Read-only existence check for `D:\Everest-data\raw` | **PASS** | PowerShell `Test-Path -LiteralPath 'D:\Everest-data\raw' -PathType Container` returned true; no directory contents were changed or inspected for acceptance. |
-| Read-only repository metadata check | **PASS — no Git metadata** | `Test-Path -LiteralPath 'D:\Everest\.git'` returned false. This prevents a repository tracking/exclusion assertion; it is not proof of Git exclusion. |
+| Read-only repository metadata check | **PASS — no Git metadata (historical)** | At the Gate C snapshot, `Test-Path -LiteralPath 'D:\Everest\.git'` returned false. This checkout now has `.git` and remote `Yizebaba/everest`; the historical row is not a current-workspace claim. |
 | `python -m pytest -q apps/api/tests/test_raw_storage.py services/weather/tests/test_icon.py services/weather/tests/test_icon_ingestion.py` | **PASS** | **21 passed in 0.31s**. These are deterministic unit/adapter tests using disposable test roots and fakes; they are not real approved-root retention evidence. |
 | ICON DB/API execution | **NOT RUN** | Prohibited by assignment scope and current governance status. |
 | Raw artifact operation | **NOT RUN** | No move, copy, delete, hash, reuse, or other operation was performed on existing raw artifacts. |
@@ -2511,8 +2513,10 @@ remain unresolved and must not be implied complete.
    audit access controls, production retention enforcement, and controlled
    disposition evidence.
 4. **Git-bearing proof:** authoritative evidence that raw payloads, metadata,
-   and checksum sidecars are excluded and untracked. This workspace is not a
-   Git checkout.
+   and checksum sidecars are excluded and untracked. The Gate C snapshot was
+   not a Git checkout; this checkout has `.git` and remote `Yizebaba/everest`.
+   GIT-003 later recorded exclusion evidence. Gate C-Operational still
+   requires production-grade Git-bearing proof.
 5. **Legacy raw disposition:** project-root `tmp-icon*` and `tmp-gfs*`
    artifacts remain noncompliant and untouched; disposition requires separate
    authorization.
@@ -3044,7 +3048,7 @@ EV-UI-001-INTEGRATION-AUDIT-QA NO-GO findings are resolved.
 | systemctl is-active everest-api | **active** on port 52147 |
 | GET /healthz | **200** |
 | GET /readyz | **200** (PostgreSQL reachable) |
-| CORS preflight (origin http://localhost:52148, X-Correlation-ID) | **200**; llow-methods: GET, OPTIONS; no credentials |
+| CORS preflight (origin http://localhost:52148, X-Correlation-ID) | **200**; allow-methods: GET, OPTIONS; no credentials |
 | GET /api/weather/current | **200**; 58 records; UTC Z timestamps |
 | GET /api/weather/forecast | **200**; 58 records; UTC Z timestamps |
 | GET /api/weather/profile?profile=SUMMIT | **200**; empty (no invented camp geometry) |
@@ -3063,21 +3067,43 @@ EV-UI-001-INTEGRATION-AUDIT-QA NO-GO findings are resolved.
 
 ## Findings resolved from the prior NO-GO
 
-1. **CORS preflight 405** — fixed in pps/api/everest_api/app.py
+1. **CORS preflight 405** — fixed in `apps/api/everest_api/app.py`
    (GET/OPTIONS, X-Correlation-ID allowed and exposed, no credentials,
    config-driven origin list); regression test
-   	est_cors_allows_approved_origin_and_rejects_other_origin.
+   `test_cors_allows_approved_origin_and_rejects_other_origin`.
 2. **Datetimes not UTC Z** — fixed with _utc_z serialization across weather,
    sources, data-health, terrain, observations, and satellite routes; regression
    tests assert positive-offset database values serialize to Z.
 3. **No usable frontend runtime** — root cause was the Windows excluded port
    range 50060-50159 blocking 50149/50151 binds in WSL mirrored networking;
    ADR-020 re-homes API to 52147 and frontend to 52148, both bind-verified.
-4. **Forecast/current data flow** — pps/web/src/lib/weatherFlow.ts drives the
+4. **Forecast/current data flow** — `apps/web/src/lib/weatherFlow.ts` drives the
    map from the validated forecast set when a time is selected and from current
    otherwise; unit tests cover both branches.
-5. **Duplicate React keys / OSM tiles** — record keys now include spatial_key
-   and orecast_cycle; CSP connect-src allows 	ile.openstreetmap.org.
+5. **Duplicate React keys / OSM tiles** — record keys now include `spatial_key`
+   and `forecast_cycle`; CSP `connect-src` allows `tile.openstreetmap.org`.
+
+## Phase 1 open-source glue verification (2026-08-27)
+
+- Official/repository documentation was checked before implementation for
+  xarray, cfgrib, netCDF4, Herbie, ecmwf-opendata, and RaymanNg/3D-Wind-Field.
+- Isolated WSL venv resolved xarray 2026.7.0, cfgrib 0.9.15.1, netCDF4 1.7.4,
+  Herbie 2026.3.0, ecmwf-opendata 0.3.34, and ecCodes 2.48.0. The deployed
+  canonical pipeline remains on its previously verified system ecCodes 2.47.1.
+- Read-only live smoke: Herbie resolved official NOMADS GFS 2026-08-27 00Z F00
+  and returned three requested inventory rows; ecmwf-opendata reported IFS
+  2026-08-27 00Z and AIFS Single 2026-08-27 06Z as latest; NOAA, ECMWF, and DWD
+  official roots returned HTTP success.
+- Retained-real wind materialization used an existing IFS pressure GRIB with no
+  provider request: cycle 2026-08-27 00Z, valid 2026-08-28 06Z, 400 hPa,
+  7x8 native AOI grid (56 points), lat 27.25..28.75, lon 86.0..87.75, 2711-byte
+  content-addressed frame. No interpolation or raw/provider URL was exposed.
+- Backend regression: 263 passed, 36 skipped. Frontend: 116 passed plus lint,
+  typecheck, and production build pass.
+- GPU compute/render is **not** claimed complete: Cesium 1.144 has no documented
+  public frame-state command-list extension compatible with the pinned MIT demo.
+  The validated data/capability/lifecycle boundary is implemented and returns a
+  truthful fallback to the existing lightweight particle renderer.
 
 ## Boundary
 
