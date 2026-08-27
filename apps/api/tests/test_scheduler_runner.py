@@ -11,7 +11,9 @@ from types import SimpleNamespace
 import pytest
 
 from everest_api.scheduler import (
+    FailedLead,
     ProviderJob,
+    ProviderRunResult,
     RunStatus,
     SchedulerConfig,
     run_once,
@@ -72,6 +74,30 @@ def test_partial_failure_is_degraded_and_keeps_independent_counts() -> None:
     assert result.failed_sources == ("noaa-gfs",)
     assert result.records_ingested == 17
     assert calls == ["ifs", "gfs"]
+
+
+def test_partial_lead_failure_is_explicit_provider_degradation() -> None:
+    """A provider keeps successful records and exposes failed lead details."""
+    result = run_once(
+        (
+            ProviderJob(
+                "ecmwf-aifs",
+                lambda: ProviderRunResult(
+                    records_ingested=2,
+                    failed_leads=(
+                        FailedLead(6, "TimeoutError", "lead timed out"),
+                    ),
+                ),
+            ),
+        )
+    )
+
+    assert result.status is RunStatus.DEGRADED
+    assert result.records_ingested == 2
+    assert not result.succeeded_sources
+    assert result.degraded_sources == ("ecmwf-aifs",)
+    assert result.outcomes[0].outcome == "degraded"
+    assert result.outcomes[0].failed_leads[0].lead_hours == 6
 
 
 def test_all_enabled_failures_produce_failure_without_all_source_claim() -> (
@@ -277,3 +303,63 @@ def test_run_recorder_marks_failed_source_without_verifying_it() -> None:
     assert source.status == "connected"
     assert source.health_status == "failed"
     assert source.last_failure_at == failed.outcomes[0].finished_at
+
+
+def test_run_recorder_marks_partial_provider_degraded_with_details() -> None:
+    """Partial lead failures persist diagnostics and degraded source health."""
+    source = SimpleNamespace(
+        status="configured",
+        health_status="unknown",
+        last_success_at=None,
+        last_failure_at=None,
+    )
+    added = []
+    outcome = run_once(
+        (
+            ProviderJob(
+                "ecmwf-ifs",
+                lambda: ProviderRunResult(
+                    3, (FailedLead(12, "TimeoutError", "not published"),)
+                ),
+            ),
+        )
+    ).outcomes[0]
+
+    DataSourceRunRecorder(lambda: _FakeSession(source, added))(outcome)
+
+    assert source.status == "configured"
+    assert source.health_status == "degraded"
+    assert source.last_success_at == outcome.finished_at
+    assert source.last_failure_at == outcome.finished_at
+    assert added[0].outcome == "succeeded"
+    assert added[0].failure_code == "PARTIAL_LEAD_FAILURE"
+    assert "+12h TimeoutError: not published" in added[0].failure_detail
+
+
+def test_seed_creates_all_known_sources_without_live_health_claim() -> None:
+    """Registry discovery includes disabled providers as configured/unknown."""
+    added = []
+
+    class _SeedSession:
+        def get(self, _model, _source_id):
+            """Represent every known source as not yet seeded."""
+            return None
+
+        def add(self, source):
+            """Capture one registry source."""
+            added.append(source)
+
+        def commit(self):
+            """Represent a successful registry transaction."""
+            return None
+
+    schedule_forecast._seed(_SeedSession())
+
+    assert {source.source_id for source in added} == {
+        "ecmwf-ifs",
+        "noaa-gfs",
+        "ecmwf-aifs",
+        "dwd-icon",
+    }
+    assert all(source.status == "configured" for source in added)
+    assert all(source.health_status == "unknown" for source in added)

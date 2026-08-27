@@ -24,20 +24,38 @@ class DataSourceRunRecorder:  # pylint: disable=too-few-public-methods
             source = session.get(DataSourceRegistryModel, outcome.source_id)
             if source is None:
                 raise LookupError(f"Unknown source: {outcome.source_id}")
+            persisted_outcome = (
+                "succeeded"
+                if outcome.outcome == "degraded"
+                else outcome.outcome
+            )
+            failure_code = outcome.failure_code
+            failure_detail = outcome.failure_detail
+            if outcome.failed_leads:
+                failure_code = "PARTIAL_LEAD_FAILURE"
+                failure_detail = "; ".join(
+                    f"+{item.lead_hours}h {item.failure_code}: "
+                    f"{item.failure_detail}"
+                    for item in outcome.failed_leads
+                )[:1024]
             session.add(
                 DataSourceRunModel(
                     source_id=outcome.source_id,
-                    outcome=outcome.outcome,
+                    outcome=persisted_outcome,
                     started_at=outcome.started_at,
                     finished_at=outcome.finished_at,
                     retryable=outcome.retryable,
-                    failure_code=outcome.failure_code,
-                    failure_detail=outcome.failure_detail,
+                    failure_code=failure_code,
+                    failure_detail=failure_detail,
                 )
             )
             if outcome.outcome == "succeeded":
                 source.health_status = "healthy"
                 source.last_success_at = outcome.finished_at
+            elif outcome.outcome == "degraded":
+                source.health_status = "degraded"
+                source.last_success_at = outcome.finished_at
+                source.last_failure_at = outcome.finished_at
             else:
                 source.health_status = "failed"
                 source.last_failure_at = outcome.finished_at

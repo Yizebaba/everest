@@ -10,7 +10,11 @@ from pathlib import Path
 import pytest
 
 from services.weather.aoi import AreaOfInterest, subset_dataset
-from services.weather.retrieval import RetrievalRequest, open_grib_dataset
+from services.weather.retrieval import (
+    RetrievalRequest,
+    RetrievedArtifact,
+    open_grib_dataset,
+)
 
 
 def test_rectilinear_subset_normalizes_longitude_and_descending_latitude() -> (
@@ -48,7 +52,7 @@ def test_rectilinear_subset_normalizes_longitude_and_descending_latitude() -> (
 
 
 def test_curvilinear_subset_masks_and_drops_outside_cells() -> None:
-    """Two-dimensional coordinates use an AOI mask and retain intersecting cells."""
+    """Two-dimensional coordinates retain only intersecting AOI cells."""
     xr = pytest.importorskip("xarray")
     source = xr.Dataset(
         {"t": (("y", "x"), [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])},
@@ -128,6 +132,45 @@ def test_retrieval_request_is_immutable_and_normalizes_utc() -> None:
         request.lead_hours = 12  # type: ignore[misc]
     with pytest.raises(ValueError, match="timezone-aware"):
         RetrievalRequest(datetime(2026, 8, 27), 0, ("2t",), Path("raw"))
+
+
+def test_retrieved_artifact_rejects_path_outside_target(tmp_path: Path) -> None:
+    """A provider cannot redirect the scheduler to an arbitrary local file."""
+    target = tmp_path / "raw"
+    target.mkdir()
+    outside = tmp_path / "outside.grib2"
+    outside.write_bytes(b"GRIB")
+    request = RetrievalRequest(
+        datetime(2026, 8, 27, tzinfo=timezone.utc),
+        0,
+        ("2t",),
+        target,
+    )
+
+    with pytest.raises(ValueError, match="target_dir"):
+        RetrievedArtifact.from_path(outside, "ecmwf-ifs", request)
+
+
+def test_retrieved_artifact_rejects_symlink(tmp_path: Path) -> None:
+    """A symlinked artifact is never accepted as provider-retained content."""
+    target = tmp_path / "raw"
+    target.mkdir()
+    actual = target / "actual.grib2"
+    actual.write_bytes(b"GRIB")
+    linked = target / "linked.grib2"
+    try:
+        linked.symlink_to(actual)
+    except OSError:
+        pytest.skip("symlinks are unavailable on this platform")
+    request = RetrievalRequest(
+        datetime(2026, 8, 27, tzinfo=timezone.utc),
+        0,
+        ("2t",),
+        target,
+    )
+
+    with pytest.raises(ValueError, match="symlink"):
+        RetrievedArtifact.from_path(linked, "ecmwf-ifs", request)
 
 
 def test_herbie_client_uses_official_gfs_contract(tmp_path: Path) -> None:
@@ -217,3 +260,38 @@ def test_ecmwf_clients_use_bounded_official_contract(
     assert calls[1][1]["param"] == ["2t", "10u"]
     assert artifact.provider == provider
     assert artifact.path.is_file()
+
+
+@pytest.mark.parametrize(
+    ("module", "class_name"),
+    [
+        ("services.weather.ecmwf.opendata_client", "EcmwfIfsOpenDataClient"),
+        ("services.weather.aifs.opendata_client", "EcmwfAifsOpenDataClient"),
+    ],
+)
+def test_ecmwf_filename_changes_with_variable_inventory(
+    tmp_path: Path, module: str, class_name: str
+) -> None:
+    """Same run/lead with a different inventory cannot reuse one target name."""
+    imported = __import__(module, fromlist=[class_name])
+    client_class = getattr(imported, class_name)
+    targets = []
+
+    class FakeClient:
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
+        def retrieve(self, request: dict[str, object]) -> None:
+            target = Path(str(request["target"]))
+            targets.append(target)
+            target.write_bytes(b"GRIB")
+
+    client = client_class(client_factory=FakeClient)
+    cycle = datetime(2026, 8, 27, 6, tzinfo=timezone.utc)
+    client.retrieve(RetrievalRequest(cycle, 12, ("2t", "10u"), tmp_path))
+    client.retrieve(RetrievalRequest(cycle, 12, ("2t", "10v"), tmp_path))
+    client.retrieve(RetrievalRequest(cycle, 12, ("10u", "2t"), tmp_path))
+
+    assert targets[0] != targets[1]
+    assert targets[0] == targets[2]
+    assert targets[0].stem.count("-") >= 3

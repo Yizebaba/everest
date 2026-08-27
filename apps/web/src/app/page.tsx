@@ -72,6 +72,7 @@ export default function Page(): React.JSX.Element {
           terrainStatus={terrainStatus}
           weatherStatus={weatherStatus}
           routeStatus={routeStatus}
+          routeNodeCount={everestRoute.data?.route.length ?? 0}
           riskStatus={riskStatus}
         />
         <LanguageSwitcher locale={locale} onLocaleChange={setLocale} />

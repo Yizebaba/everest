@@ -201,3 +201,20 @@ def test_selection_prefers_summit_profile_then_newest_valid_time(
     assert response.status_code == 200
     assert selected["timestamp"] == base + timedelta(hours=6)
     assert response.json()["risk"]["basis"] == "persisted_canonical_weather"
+
+
+def test_pressure_level_rows_are_never_mislabeled_as_summit() -> None:
+    """Raw pressure levels cannot satisfy the SUMMIT risk contract."""
+    row = _row(
+        timestamp=datetime(2026, 8, 27, 12, tzinfo=UTC),
+        profile=None,
+        altitude=9797.0,
+    )
+
+    response = TestClient(create_app(lambda: _Session([row]))).get(
+        "/api/risk/summit-window"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["risk"]["level"] == "unknown"
+    assert response.json()["risk"]["basis"] == "no_persisted_record"

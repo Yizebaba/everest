@@ -20,6 +20,11 @@ export type WindFieldLayerStatus = WindFieldMode & {
   validTime: string;
 };
 
+/** React effect cleanup boundary; safe even after the owning scene is gone. */
+export function destroyWindFieldLayer(layer: WindFieldLayer): void {
+  layer.destroy();
+}
+
 /**
  * Lifecycle and validated-data boundary for Everest's GPU wind layer.
  *
@@ -68,10 +73,17 @@ export class WindFieldLayer {
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
-    if (this.scene.primitives.contains(this.primitives)) {
-      // The scene collection may destroy the child on removal. The resource
-      // ledger checks isDestroyed(), so this remains exactly-once either way.
-      this.scene.primitives.remove(this.primitives);
+    // The owning Viewer/Scene may already be torn down by the time this runs:
+    // a destroyed Cesium Scene no longer exposes its primitives collection, so
+    // guard the removal and let the scene own children it already collected.
+    try {
+      if (this.scene.primitives.contains(this.primitives)) {
+        // The scene collection may destroy the child on removal. The resource
+        // ledger checks isDestroyed(), so this remains exactly-once either way.
+        this.scene.primitives.remove(this.primitives);
+      }
+    } catch {
+      // Scene already destroyed; its child collections are gone with it.
     }
     this.resources.destroy();
   }

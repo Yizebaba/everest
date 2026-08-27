@@ -1,18 +1,20 @@
 "use client";
 
+import React from "react";
+
 import { getCommunication } from "@/domains/communication";
 import { getDevices } from "@/domains/device";
 import { getHazard } from "@/domains/hazard";
 import { getMission } from "@/domains/mission";
-import { getRoute } from "@/domains/route";
 import { getSensor } from "@/domains/sensor";
-import { t, type Locale } from "@/i18n/t";
+import { t, type Locale, type MessageKey } from "@/i18n/t";
 
 export interface DomainStatusBarProps {
   locale: Locale;
   terrainStatus: "ok" | "empty";
   weatherStatus: "ok" | "empty";
   routeStatus: "ok" | "empty";
+  routeNodeCount: number;
   riskStatus: "ok" | "empty";
 }
 
@@ -34,16 +36,16 @@ export function DomainStatusBar({
   terrainStatus,
   weatherStatus,
   routeStatus,
+  routeNodeCount,
   riskStatus,
 }: DomainStatusBarProps): React.JSX.Element {
   const sensor = getSensor();
-  const route = getRoute();
   const hazard = getHazard();
   const communication = getCommunication();
   const devices = getDevices();
   const mission = getMission();
 
-  const statusFor = (index: number): string => {
+  const statusFor = (index: number): "ok" | "empty" | "reserved" => {
     if (index === 0) return "ok";
     if (index === 1) return terrainStatus;
     if (index === 2) return weatherStatus;
@@ -52,20 +54,45 @@ export function DomainStatusBar({
     return "reserved";
   };
 
+  const statusLabel = (status: "ok" | "empty" | "reserved"): string => {
+    const keys: Record<typeof status, MessageKey> = {
+      ok: "domains.statusOk",
+      empty: "domains.statusEmpty",
+      reserved: "domains.statusReserved",
+    };
+    return t(keys[status], locale);
+  };
+
+  const countLabel = (count: number, key: MessageKey): string =>
+    `${count} ${t(key, locale)}`;
+
+  const missionAvailability = statusLabel(
+    mission.availability === "available" ? "ok" : mission.availability,
+  );
+
   return (
-    <div className="domains" aria-label="Everest OS domains">
-      {DOMAIN_KEYS.map((key, index) => (
-        <span
-          key={key}
-          className={`domains__item domains__item--${statusFor(index)}`}
-        >
-          {t(key, locale)}
-        </span>
-      ))}
+    <div className="domains" aria-label={t("domains.ariaLabel", locale)}>
+      {DOMAIN_KEYS.map((key, index) => {
+        const status = statusFor(index);
+        const name = t(key, locale);
+        const separator = locale === "zh" ? "：" : ": ";
+        return (
+          <span
+            key={key}
+            className={`domains__item domains__item--${status}`}
+            aria-label={`${name}${separator}${statusLabel(status)}`}
+          >
+            {name}
+          </span>
+        );
+      })}
       <span className="domains__detail">
-        {sensor.readings.length} sensors · {route.nodes.length} route nodes ·{" "}
-        {hazard.points.length} hazards · {communication.links.length} links ·{" "}
-        {devices.items.length} devices · mission {mission.availability}
+        {countLabel(sensor.readings.length, "domains.sensors")} ·{" "}
+        {countLabel(routeNodeCount, "domains.routeNodes")} ·{" "}
+        {countLabel(hazard.points.length, "domains.hazards")} ·{" "}
+        {countLabel(communication.links.length, "domains.links")} ·{" "}
+        {countLabel(devices.items.length, "domains.devices")} ·{" "}
+        {t("domains.mission", locale)} {missionAvailability}
       </span>
       <style jsx>{`
         .domains {

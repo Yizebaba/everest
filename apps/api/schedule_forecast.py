@@ -26,7 +26,9 @@ from sqlalchemy.orm import sessionmaker  # noqa: E402
 from everest_api.raw_storage import RawStoragePolicy  # noqa: E402
 from everest_api.registry.models import DataSourceRegistryModel  # noqa: E402
 from everest_api.scheduler import (  # noqa: E402
+    FailedLead,
     ProviderJob,
+    ProviderRunResult,
     RunStatus,
     SchedulerConfig,
     run_once,
@@ -95,13 +97,19 @@ def _env_db_url() -> str:
 
 
 def _seed(session) -> None:
-    for source_id in ("ecmwf-ifs",):
+    known_sources = (
+        ("ecmwf-ifs", "ECMWF IFS", "ECMWF"),
+        ("noaa-gfs", "NOAA GFS", "NOAA"),
+        ("ecmwf-aifs", "ECMWF AIFS", "ECMWF"),
+        ("dwd-icon", "DWD ICON", "DWD"),
+    )
+    for source_id, name, provider in known_sources:
         if session.get(DataSourceRegistryModel, source_id) is None:
             session.add(
                 DataSourceRegistryModel(
                     source_id=source_id,
-                    name="ECMWF IFS",
-                    provider="ECMWF",
+                    name=name,
+                    provider=provider,
                     category="forecast",
                     status="configured",
                     access_method="connector",
@@ -114,7 +122,7 @@ def _seed(session) -> None:
     session.commit()
 
 
-def _ingest_ifs(service, cycle: datetime) -> int:
+def _ingest_ifs(service, cycle: datetime) -> int | ProviderRunResult:
     """Ingest the near-surface IFS fields for every published lead of a cycle.
 
     These are 10 m winds, 2 m temperature and surface precipitation over the
@@ -126,15 +134,17 @@ def _ingest_ifs(service, cycle: datetime) -> int:
     connector = EcmwfOpenDataConnector(RAW_ROOT)
     orography = None  # model orography is time-invariant within a cycle
     count = 0
+    failed_leads: list[FailedLead] = []
     for lead in LEADS_IFS:
         try:
             retrieval = connector.retrieve(cycle, lead_hours=lead)
-        except Exception as exc:  # pylint: disable=broad-exception-caught
+        except Exception as error:  # pylint: disable=broad-exception-caught
             if lead == 0:
                 raise  # no lead 0 means the cycle itself is not published
             # A later lead the provider has not published yet must not discard
             # the leads already ingested for this cycle.
-            print(f"  surface +{lead}h unavailable ({exc}); skipping lead")
+            print(f"  surface +{lead}h unavailable; skipping lead")
+            failed_leads.append(_failed_lead(lead, error))
             continue
         payload = retrieval.payload_path.read_bytes()
         messages = parse_grib_bytes(payload)
@@ -142,6 +152,11 @@ def _ingest_ifs(service, cycle: datetime) -> int:
         if math.isnan(record.altitude):
             if orography is None:
                 print(f"  surface +{lead}h has no orography yet; skipping lead")
+                failed_leads.append(
+                    FailedLead(
+                        lead, "MissingOrography", "orography unavailable"
+                    )
+                )
                 continue
             # Reuse the orography decoded at lead 0: the model's surface height
             # does not change across leads of one cycle, so this is the same
@@ -190,7 +205,7 @@ def _ingest_ifs(service, cycle: datetime) -> int:
         )
         service.ingest(descriptor, (canonical,))
         count += 1
-    return count
+    return _provider_result(count, failed_leads)
 
 
 def _fetch_pressure(cycle: datetime, lead_hours: int = 0) -> bytes:
@@ -390,12 +405,15 @@ def _materialize_ifs_wind_field(
                 WIND_FIELD_AOI.north,
             ),
         )
-    return materialize_wind_field_frame(frame, root)
+    target_root = root if lead_hours == 0 else Path(root) / "forecast-leads"
+    return materialize_wind_field_frame(
+        frame, target_root, excluded_roots=(RAW_ROOT,)
+    )
 
 
 def _ingest_ifs_pressure(  # pylint: disable=too-many-locals
     service, cycle: datetime, leads=PRESSURE_LEADS
-) -> int:
+) -> int | ProviderRunResult:
     """Ingest the vertical profile at every requested lead, not just lead 0.
 
     Fetching only lead 0 gave a vertical snapshot at cycle time and no vertical
@@ -405,13 +423,15 @@ def _ingest_ifs_pressure(  # pylint: disable=too-many-locals
     import hashlib
 
     count = 0
+    failed_leads: list[FailedLead] = []
     for lead in leads:
         try:
             payload = _fetch_pressure(cycle, lead)
-        except Exception as exc:  # pylint: disable=broad-exception-caught
+        except Exception as error:  # pylint: disable=broad-exception-caught
             # A lead that the provider has not published yet must not discard
             # the leads that are already available.
-            print(f"  pressure +{lead}h unavailable ({exc}); skipping lead")
+            print(f"  pressure +{lead}h unavailable; skipping lead")
+            failed_leads.append(_failed_lead(lead, error))
             continue
         messages = parse_pressure_messages(payload)
         records = normalize_pressure_levels(messages, LAT, LON, PRESSURE_LEVELS)
@@ -424,11 +444,11 @@ def _ingest_ifs_pressure(  # pylint: disable=too-many-locals
             wind_path = _materialize_ifs_wind_field(artifact_path, cycle, lead)
             if wind_path is not None:
                 print(f"  wind field +{lead}h: {wind_path.name}")
-        except Exception as exc:  # pylint: disable=broad-exception-caught
+        except Exception:  # pylint: disable=broad-exception-caught
             # Wind visualization is an additive derived product. A decoder or
             # materialization failure must not roll back canonical weather that
             # was already retrieved and can still serve every existing API.
-            print(f"  wind field +{lead}h unavailable ({exc}); continuing")
+            print(f"  wind field +{lead}h unavailable; continuing")
         descriptor = RawArtifactDescriptor(
             "ecmwf-ifs",
             "ifs-pressure",
@@ -477,10 +497,10 @@ def _ingest_ifs_pressure(  # pylint: disable=too-many-locals
         profiles = _ingest_route_profiles(service, descriptor, records)
         count += profiles
         print(f"  pressure +{lead}h: {len(records)} levels, {profiles} camps")
-    return count
+    return _provider_result(count, failed_leads)
 
 
-def _run_ifs_with_fallback(service) -> int:
+def _run_ifs_with_fallback(service) -> int | ProviderRunResult:
     """Run the existing IFS ingestion, retaining its previous-cycle fallback."""
     cycle = datetime.now(UTC).replace(minute=0, second=0, microsecond=0)
     hour = cycle.hour
@@ -492,11 +512,11 @@ def _run_ifs_with_fallback(service) -> int:
     for _ in range(8):
         try:
             print(f"ingesting IFS cycle {cycle.isoformat()}")
-            count = _ingest_ifs(service, cycle)
-            print(f"ingested {count} surface leads")
-            pressure_count = _ingest_ifs_pressure(service, cycle)
-            print(f"ingested {pressure_count} pressure records")
-            total = count + pressure_count
+            surface = _as_provider_result(_ingest_ifs(service, cycle))
+            print(f"ingested {surface.records_ingested} surface leads")
+            pressure = _as_provider_result(_ingest_ifs_pressure(service, cycle))
+            print(f"ingested {pressure.records_ingested} pressure records")
+            total = surface.records_ingested + pressure.records_ingested
             if total == 0:
                 # Preserve the prior behavior: an available cycle that yielded
                 # nothing is a failed IFS job, not a reason to ingest an older
@@ -504,14 +524,17 @@ def _run_ifs_with_fallback(service) -> int:
                 raise _EmptyIfsCycle(
                     f"IFS cycle {cycle.isoformat()} yielded no records"
                 )
-            return total
+            failed_leads = surface.failed_leads + pressure.failed_leads
+            return (
+                ProviderRunResult(total, failed_leads)
+                if failed_leads
+                else total
+            )
         except _EmptyIfsCycle:
             raise
         except Exception as exc:  # pylint: disable=broad-exception-caught
             last_error = exc
-            print(
-                f"cycle {cycle.isoformat()} unavailable ({exc}); trying previous"
-            )
+            print(f"cycle {cycle.isoformat()} unavailable; trying previous")
             cycle = cycle - timedelta(hours=6)
     raise RuntimeError(
         "no recent IFS cycle available in the last 48 h"
@@ -520,6 +543,32 @@ def _run_ifs_with_fallback(service) -> int:
 
 class _EmptyIfsCycle(RuntimeError):
     """An available IFS cycle completed but produced no canonical records."""
+
+
+def _failed_lead(lead: int, error: Exception) -> FailedLead:
+    """Create bounded partial-failure facts for scheduler reporting."""
+    from everest_api.registry.redaction import redact_failure_detail
+
+    detail = str(error).replace("\n", " ").strip()
+    return FailedLead(
+        lead,
+        error.__class__.__name__[:128],
+        redact_failure_detail((detail or error.__class__.__name__)[:256]),
+    )
+
+
+def _provider_result(count: int, failures: list[FailedLead]):
+    """Retain integer compatibility when every requested lead succeeded."""
+    return ProviderRunResult(count, tuple(failures)) if failures else count
+
+
+def _as_provider_result(result: int | ProviderRunResult) -> ProviderRunResult:
+    """Normalize legacy integer provider results for aggregation."""
+    return (
+        result
+        if isinstance(result, ProviderRunResult)
+        else ProviderRunResult(result)
+    )
 
 
 def create_gfs_job(service, raw_root):
@@ -611,7 +660,8 @@ def main() -> int:
     result = run_once(jobs, recorder=DataSourceRunRecorder(factory))
     print(
         f"scheduler {result.status.value}: attempted={result.attempted_sources} "
-        f"succeeded={result.succeeded_sources} failed={result.failed_sources} "
+        f"succeeded={result.succeeded_sources} "
+        f"degraded={result.degraded_sources} failed={result.failed_sources} "
         f"skipped={result.skipped_sources} records={result.records_ingested}"
     )
     if result.status is RunStatus.SUCCESS:

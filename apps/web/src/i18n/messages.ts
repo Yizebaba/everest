@@ -67,6 +67,7 @@ export const en = {
     nonAuthoritative: "non-authoritative",
   },
   domains: {
+    ariaLabel: "Everest OS domains",
     environment: "Environment",
     terrain: "Terrain",
     weather: "Weather",
@@ -77,6 +78,14 @@ export const en = {
     communication: "Communication",
     device: "Device",
     mission: "Mission",
+    statusOk: "available",
+    statusEmpty: "empty",
+    statusReserved: "reserved",
+    sensors: "sensors",
+    routeNodes: "route nodes",
+    hazards: "hazards",
+    links: "links",
+    devices: "devices",
   },
 } as const;
 
@@ -155,6 +164,7 @@ export const zh = {
     nonAuthoritative: "非权威",
   },
   domains: {
+    ariaLabel: "珠峰 OS 领域状态",
     environment: "环境",
     terrain: "地形",
     weather: "气象",
@@ -165,6 +175,14 @@ export const zh = {
     communication: "通信",
     device: "设备",
     mission: "任务",
+    statusOk: "可用",
+    statusEmpty: "空",
+    statusReserved: "预留",
+    sensors: "个传感器",
+    routeNodes: "个路线节点",
+    hazards: "个危险点",
+    links: "条链路",
+    devices: "台设备",
   },
 } as const satisfies CatalogShape;
 

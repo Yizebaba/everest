@@ -14,8 +14,9 @@ import math
 import os
 from pathlib import Path
 import re
+import stat
 import tempfile
-from typing import Any
+from typing import Any, Iterable
 
 
 SCHEMA_VERSION = 1
@@ -156,6 +157,7 @@ def materialize_wind_field_frame(
     derived_root: Path | str,
     *,
     limits: WindFieldLimits | None = None,
+    excluded_roots: Iterable[Path | str] = (),
 ) -> Path:
     """Atomically store canonical JSON by digest and update latest."""
     active_limits = limits or WindFieldLimits()
@@ -166,14 +168,44 @@ def materialize_wind_field_frame(
     root = Path(derived_root)
     if not root.is_absolute():
         raise ValueError("derived_root must be an absolute external path")
+    _reject_symlink_components(root)
+    exclusions = [
+        Path(__file__).resolve().parents[2],
+        *map(Path, excluded_roots),
+    ]
+    configured_raw_root = os.environ.get("EVEREST_RAW_ROOT")
+    if configured_raw_root:
+        exclusions.append(Path(configured_raw_root))
+    resolved_root = root.resolve(strict=False)
+    if any(
+        exclusion.is_absolute()
+        and _paths_overlap(resolved_root, exclusion.resolve(strict=False))
+        for exclusion in exclusions
+    ):
+        raise ValueError(
+            "derived_root must be outside repository and raw roots"
+        )
     directory = root / "wind-field"
     directory.mkdir(parents=True, exist_ok=True)
+    _require_safe_directory(directory)
     target = directory / f"{digest}.json"
-    if not target.exists():
+    if target.is_symlink():
+        raise ValueError("derived digest file must not be a symlink")
+    if target.exists():
+        if (
+            _read_regular_file(target, active_limits.max_serialized_bytes)
+            != payload
+        ):
+            raise ValueError(
+                "existing derived digest file failed integrity validation"
+            )
+    else:
         _atomic_write(target, payload)
     pointer = _canonical_json({"sha256": digest})
     latest = directory / "latest.json"
-    if not latest.exists() or latest.read_bytes() != pointer:
+    if latest.is_symlink():
+        raise ValueError("derived latest file must not be a symlink")
+    if not latest.exists() or _read_regular_file(latest, 1_024) != pointer:
         _atomic_write(latest, pointer)
     return target
 
@@ -183,7 +215,9 @@ def _coordinate(dataset: Any, name: str) -> list[float]:
         raise KeyError(f"dataset is missing coordinate: {name}")
     coordinate = dataset.coords[name]
     if coordinate.ndim != 1 or coordinate.dims != (name,):
-        raise ValueError(f"{name} must be a 1-D coordinate on its own dimension")
+        raise ValueError(
+            f"{name} must be a 1-D coordinate on its own dimension"
+        )
     values = [float(value) for value in coordinate.values.tolist()]
     if not values:
         raise ValueError(f"{name} coordinate must not be empty")
@@ -208,7 +242,9 @@ def _wind_values(
     variable = dataset[name]
     expected_dimensions = {latitude_name, longitude_name}
     if variable.ndim != 2 or set(variable.dims) != expected_dimensions:
-        raise ValueError("u and v must use the same two dimensions as coordinates")
+        raise ValueError(
+            "u and v must use the same two dimensions as coordinates"
+        )
     ordered = variable.transpose(latitude_name, longitude_name)
     if ordered.shape != (len(latitude), len(longitude)):
         raise ValueError("wind variable shape does not match coordinates")
@@ -259,9 +295,13 @@ def _validated_bounds(
     if not all(math.isfinite(value) for value in (west, south, east, north)):
         raise ValueError("bounds must be finite")
     if not -180 <= west < east <= 180:
-        raise ValueError("longitude bounds must satisfy -180 <= west < east <= 180")
+        raise ValueError(
+            "longitude bounds must satisfy -180 <= west < east <= 180"
+        )
     if not -90 <= south <= north <= 90:
-        raise ValueError("latitude bounds must satisfy -90 <= south <= north <= 90")
+        raise ValueError(
+            "latitude bounds must satisfy -90 <= south <= north <= 90"
+        )
     return west, south, east, north
 
 
@@ -322,6 +362,9 @@ def _canonical_json(value: dict[str, Any]) -> bytes:
 
 
 def _atomic_write(target: Path, payload: bytes) -> None:
+    if target.is_symlink():
+        raise ValueError("derived target must not be a symlink")
+    _require_safe_directory(target.parent)
     descriptor, temporary_name = tempfile.mkstemp(
         dir=target.parent, prefix=f".{target.name}.", suffix=".tmp"
     )
@@ -332,8 +375,62 @@ def _atomic_write(target: Path, payload: bytes) -> None:
             stream.flush()
             os.fsync(stream.fileno())
         os.replace(temporary, target)
+        if target.is_symlink() or not target.is_file():
+            raise ValueError(
+                "derived target must be a regular non-symlink file"
+            )
     finally:
         temporary.unlink(missing_ok=True)
+
+
+def _reject_symlink_components(path: Path) -> None:
+    """Reject every existing lexical component before following any links."""
+    current = Path(path.anchor)
+    for part in path.parts[1:]:
+        current /= part
+        if current.is_symlink():
+            raise ValueError("derived path must not contain symlink components")
+
+
+def _require_safe_directory(directory: Path) -> None:
+    _reject_symlink_components(directory)
+    try:
+        mode = directory.stat(follow_symlinks=False).st_mode
+    except OSError as error:
+        raise ValueError("derived directory could not be validated") from error
+    if not stat.S_ISDIR(mode):
+        raise ValueError("derived directory must be a regular directory")
+
+
+def _read_regular_file(path: Path, maximum_bytes: int) -> bytes:
+    """Read a bounded regular file with no-follow support when available."""
+    flags = (
+        os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    )
+    descriptor = os.open(path, flags)
+    try:
+        status = os.fstat(descriptor)
+        if not stat.S_ISREG(status.st_mode) or status.st_size > maximum_bytes:
+            raise ValueError("derived file must be a bounded regular file")
+        with os.fdopen(descriptor, "rb", closefd=False) as stream:
+            payload = stream.read(maximum_bytes + 1)
+        if len(payload) > maximum_bytes:
+            raise ValueError("derived file exceeds byte limit")
+        return payload
+    finally:
+        os.close(descriptor)
+
+
+def _paths_overlap(first: Path, second: Path) -> bool:
+    return _is_relative_to(first, second) or _is_relative_to(second, first)
+
+
+def _is_relative_to(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return False
+    return True
 
 
 __all__ = [

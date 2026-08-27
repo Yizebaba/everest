@@ -8,17 +8,21 @@ from everest_api.scheduler.provider_jobs import (
     create_icon_job,
 )
 from everest_api.scheduler.runner import (
+    FailedLead,
     ProviderJob,
     ProviderOutcome,
+    ProviderRunResult,
     RunStatus,
     SchedulerResult,
     run_once,
 )
 
 __all__ = [
+    "FailedLead",
     "ProviderJob",
     "ProviderJobConfigurationError",
     "ProviderOutcome",
+    "ProviderRunResult",
     "RunStatus",
     "SchedulerConfig",
     "SchedulerResult",

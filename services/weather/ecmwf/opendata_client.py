@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from typing import Any, Callable
 
 from services.weather.retrieval import RetrievalRequest, RetrievedArtifact
@@ -62,7 +63,12 @@ class EcmwfIfsOpenDataClient:  # pylint: disable=too-few-public-methods
 
 def _filename(model: str, request: RetrievalRequest) -> str:
     """Build a collision-resistant model/run/step artifact name."""
-    return f"{model}-{request.cycle:%Y%m%d%H}-f{request.lead_hours:03d}.grib2"
+    inventory = "\x00".join(sorted(request.variables)).encode("utf-8")
+    inventory_digest = hashlib.sha256(inventory).hexdigest()[:12]
+    return (
+        f"{model}-{request.cycle:%Y%m%d%H}-f{request.lead_hours:03d}"
+        f"-{inventory_digest}.grib2"
+    )
 
 
 __all__ = ["EcmwfIfsOpenDataClient"]

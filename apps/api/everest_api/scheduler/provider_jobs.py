@@ -16,6 +16,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from everest_api.scheduler.runner import FailedLead, ProviderRunResult
+
 
 GFS_SURFACE_INVENTORY = (
     "TMP:2 m above ground",
@@ -365,7 +367,7 @@ def _run_with_cycle_lookback(
     now: Callable[[], datetime] | None,
     leads: tuple[int, ...],
     lookback_cycles: int,
-) -> int:
+) -> int | ProviderRunResult:
     if lookback_cycles < 1 or lookback_cycles > 16:
         raise ValueError("provider lookback must be between 1 and 16 cycles")
     current = (now or (lambda: datetime.now(UTC)))()
@@ -380,15 +382,25 @@ def _run_with_cycle_lookback(
             last_error = error
             cycle -= timedelta(hours=6)
             continue
+        failed_leads: list[FailedLead] = []
         for lead in leads[1:]:
             try:
                 count += ingest_lead(cycle, lead)
-            except Exception:  # pylint: disable=broad-exception-caught
+            except Exception as error:  # pylint: disable=broad-exception-caught
+                failed_leads.append(
+                    FailedLead(
+                        lead,
+                        error.__class__.__name__[:128],
+                        _bounded_failure_detail(error),
+                    )
+                )
                 continue
         if count == 0:
             raise RuntimeError(
                 f"provider cycle {cycle.isoformat()} yielded no records"
             )
+        if failed_leads:
+            return ProviderRunResult(count, tuple(failed_leads))
         return count
     raise RuntimeError(
         "no recent published provider cycle available"
@@ -402,6 +414,14 @@ def _latest_cycle(value: datetime) -> datetime:
         )
     value = value.astimezone(UTC).replace(minute=0, second=0, microsecond=0)
     return value.replace(hour=value.hour - value.hour % 6)
+
+
+def _bounded_failure_detail(error: Exception) -> str:
+    """Keep per-lead diagnostics bounded and free of obvious credentials."""
+    from everest_api.registry.redaction import redact_failure_detail
+
+    detail = str(error).replace("\n", " ").strip()
+    return redact_failure_detail((detail or error.__class__.__name__)[:256])
 
 
 def _bounded_leads(leads: Sequence[int]) -> tuple[int, ...]:
@@ -484,6 +504,14 @@ def _official_gfs_client() -> Any:
 def _validate_artifact(artifact: Any, provider: str, request: Any) -> None:
     if artifact.provider != provider or artifact.request != request:
         raise ValueError(f"{provider} retrieval identity mismatch")
+    from services.weather.retrieval import RetrievedArtifact
+
+    verified = RetrievedArtifact.from_path(artifact.path, provider, request)
+    if (
+        verified.sha256 != artifact.sha256
+        or verified.size_bytes != artifact.size_bytes
+    ):
+        raise ValueError(f"{provider} retrieval integrity mismatch")
 
 
 def _validate_weather_identity(weather: Any, source: str, model: str) -> None:

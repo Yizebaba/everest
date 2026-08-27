@@ -45,7 +45,7 @@ class EcmwfAifsOpenDataClient:  # pylint: disable=too-few-public-methods
         )
 
     def retrieve(self, request: RetrievalRequest) -> RetrievedArtifact:
-        """Retrieve one immutable AIFS request into its destination directory."""
+        """Retrieve an immutable AIFS request into its destination."""
         request.target_dir.mkdir(parents=True, exist_ok=True)
         target = request.target_dir / _filename("aifs-single", request)
         self._client.retrieve(

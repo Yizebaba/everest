@@ -51,7 +51,11 @@ import {
   type SceneEntitySelections,
   type SceneSelection,
 } from "@/cesium/selection";
-import { detectWindFieldCapabilities, WindFieldLayer } from "@/cesium/wind";
+import {
+  destroyWindFieldLayer,
+  detectWindFieldCapabilities,
+  WindFieldLayer,
+} from "@/cesium/wind";
 import {
   AOI_CENTER,
   compassPoint,
@@ -761,7 +765,9 @@ export function EverestScene({
     );
 
     return () => {
-      layer.destroy();
+      // WindFieldLayer owns its resources and tolerates the Viewer/Scene having
+      // already been destroyed by the parent effect cleanup.
+      destroyWindFieldLayer(layer);
     };
   }, [windFieldFrame]);
 

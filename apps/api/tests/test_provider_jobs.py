@@ -12,6 +12,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from services.weather.retrieval import RetrievedArtifact
+from everest_api.scheduler import ProviderRunResult
 from everest_api.scheduler.provider_jobs import (
     GFS_SURFACE_INVENTORY,
     ProviderJobConfigurationError,
@@ -70,15 +72,10 @@ def test_gfs_job_uses_surface_inventory_and_preserves_identity(tmp_path: Path):
 
         def retrieve(self, request):
             requests.append(request)
-            path = tmp_path / f"gfs-{request.lead_hours}.grib2"
+            request.target_dir.mkdir(parents=True, exist_ok=True)
+            path = request.target_dir / f"gfs-{request.lead_hours}.grib2"
             path.write_bytes(b"GRIB")
-            return SimpleNamespace(
-                path=path,
-                provider="noaa-gfs",
-                request=request,
-                sha256="a" * 64,
-                size_bytes=4,
-            )
+            return RetrievedArtifact.from_path(path, "noaa-gfs", request)
 
     adapter_calls = []
     adapter = SimpleNamespace(
@@ -121,20 +118,49 @@ def test_gfs_job_rejects_non_official_resolved_herbie_source(tmp_path: Path):
         job()
 
 
+def test_gfs_job_reports_partial_lead_failure_and_keeps_count(tmp_path: Path):
+    """A failed later lead degrades the run without erasing lead-zero work."""
+
+    class FakeClient:
+        source_priority = ("aws", "google", "nomads")
+        resolved_source = "aws"
+
+        def retrieve(self, request):
+            if request.lead_hours == 3:
+                raise TimeoutError("lead unavailable")
+            request.target_dir.mkdir(parents=True, exist_ok=True)
+            path = request.target_dir / "gfs-0.grib2"
+            path.write_bytes(b"GRIB")
+            return RetrievedArtifact.from_path(path, "noaa-gfs", request)
+
+    adapter = SimpleNamespace(ingest=lambda *_args: None)
+    result = create_gfs_job(
+        object(),
+        tmp_path,
+        client_factory=FakeClient,
+        parser=lambda _payload: (SimpleNamespace(),),
+        normalizer=lambda *_args: _weather("noaa-gfs", "GFS"),
+        adapter_factory=lambda _service: adapter,
+        now=lambda: CYCLE,
+        leads=(0, 3),
+    )()
+
+    assert isinstance(result, ProviderRunResult)
+    assert result.records_ingested == 1
+    assert result.failed_leads[0].lead_hours == 3
+    assert result.failed_leads[0].failure_code == "TimeoutError"
+    assert result.failed_leads[0].failure_detail == "lead unavailable"
+
+
 def test_aifs_job_builds_safe_descriptor_with_aifs_identity(tmp_path: Path):
     service = _CaptureService()
 
     class FakeClient:
         def retrieve(self, request):
-            path = tmp_path / "aifs.grib2"
+            request.target_dir.mkdir(parents=True, exist_ok=True)
+            path = request.target_dir / "aifs.grib2"
             path.write_bytes(b"GRIB")
-            return SimpleNamespace(
-                path=path,
-                provider="ecmwf-aifs",
-                request=request,
-                sha256="b" * 64,
-                size_bytes=4,
-            )
+            return RetrievedArtifact.from_path(path, "ecmwf-aifs", request)
 
     message = SimpleNamespace()
     weather = _weather("ecmwf-aifs", "AIFS")

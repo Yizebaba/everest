@@ -1,7 +1,7 @@
 """Deterministic tests for the scheduler pressure-level ingestion path."""
 
 # Test fakes import helpers inline to keep fixtures self-contained.
-# pylint: disable=import-outside-toplevel
+# pylint: disable=import-outside-toplevel,protected-access
 
 from __future__ import annotations
 
@@ -132,12 +132,14 @@ def test_materialize_wind_field_uses_real_aoi_grid(tmp_path: Path) -> None:
     artifact.write_bytes(b"GRIB fixture")
     cycle = datetime(2026, 8, 27, 0, tzinfo=UTC)
 
-    target = sched._materialize_ifs_wind_field(  # pylint: disable=protected-access
-        artifact,
-        cycle,
-        6,
-        derived_root=tmp_path / "derived",
-        opener=_open,
+    target = (
+        sched._materialize_ifs_wind_field(  # pylint: disable=protected-access
+            artifact,
+            cycle,
+            6,
+            derived_root=tmp_path / "derived",
+            opener=_open,
+        )
     )
 
     assert target is not None
@@ -168,3 +170,32 @@ def test_materialize_wind_field_is_disabled_without_root(
         )
         is None
     )
+
+
+def test_future_wind_lead_does_not_replace_latest_pointer(
+    tmp_path: Path,
+) -> None:
+    """All leads are stored, but latest remains aligned to cycle valid time."""
+    dataset = xr.Dataset(
+        {
+            "u": (("latitude", "longitude"), [[5.0]]),
+            "v": (("latitude", "longitude"), [[-5.0]]),
+        },
+        coords={"latitude": [28.0], "longitude": [87.0]},
+    )
+    artifact = tmp_path / "pressure.grib2"
+    artifact.write_bytes(b"GRIB fixture")
+    root = tmp_path / "derived"
+    cycle = datetime(2026, 8, 27, 0, tzinfo=UTC)
+
+    lead_zero = sched._materialize_ifs_wind_field(
+        artifact, cycle, 0, derived_root=root, opener=lambda *_a, **_k: dataset
+    )
+    pointer_before = (root / "wind-field" / "latest.json").read_bytes()
+    future = sched._materialize_ifs_wind_field(
+        artifact, cycle, 6, derived_root=root, opener=lambda *_a, **_k: dataset
+    )
+
+    assert future != lead_zero
+    assert future.is_file()
+    assert (root / "wind-field" / "latest.json").read_bytes() == pointer_before

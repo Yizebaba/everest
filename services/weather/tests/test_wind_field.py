@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 import json
 import math
+import os
 from pathlib import Path
 
 import pytest
@@ -133,7 +134,9 @@ def test_rejects_grid_over_point_limit() -> None:
             level=400.0,
             level_units="hPa",
             bounds=(86.0, 27.0, 87.5, 28.5),
-            limits=WindFieldLimits(max_latitudes=2, max_longitudes=2, max_points=3),
+            limits=WindFieldLimits(
+                max_latitudes=2, max_longitudes=2, max_points=3
+            ),
         )
 
 
@@ -169,3 +172,50 @@ def test_materialization_is_content_addressed_atomic_and_idempotent(
     )
     assert latest == {"sha256": first.stem}
     assert not list((tmp_path / "wind-field").glob("*.tmp"))
+
+
+def test_materialization_rejects_derived_root_beneath_repository(
+    tmp_path: Path,
+) -> None:
+    """Derived output must not be written into the source repository."""
+    repository_root = tmp_path / "repository"
+    repository_root.mkdir()
+
+    with pytest.raises(ValueError, match="outside repository and raw roots"):
+        materialize_wind_field_frame(
+            _frame(),
+            repository_root / "derived",
+            excluded_roots=(repository_root,),
+        )
+
+
+@pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks unsupported")
+def test_materialization_rejects_symlink_path_component(tmp_path: Path) -> None:
+    """A symlink cannot redirect derived writes to another storage tree."""
+    real_root = tmp_path / "real"
+    real_root.mkdir()
+    linked_root = tmp_path / "linked"
+    try:
+        linked_root.symlink_to(real_root, target_is_directory=True)
+    except OSError as error:
+        pytest.skip(f"symlink creation unavailable: {error}")
+
+    with pytest.raises(ValueError, match="symlink"):
+        materialize_wind_field_frame(_frame(), linked_root)
+
+
+@pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks unsupported")
+def test_materialization_rejects_symlink_latest_file(tmp_path: Path) -> None:
+    """The latest pointer must never be read through or replace a symlink."""
+    directory = tmp_path / "wind-field"
+    directory.mkdir()
+    outside = tmp_path / "outside.json"
+    outside.write_text("untouched", encoding="utf-8")
+    try:
+        (directory / "latest.json").symlink_to(outside)
+    except OSError as error:
+        pytest.skip(f"symlink creation unavailable: {error}")
+
+    with pytest.raises(ValueError, match="symlink"):
+        materialize_wind_field_frame(_frame(), tmp_path)
+    assert outside.read_text(encoding="utf-8") == "untouched"

@@ -8,10 +8,12 @@ import hashlib
 from pathlib import Path
 from typing import Any, Callable
 
+_MAX_RETRIEVED_BYTES = 512 * 1024 * 1024
+
 
 @dataclass(frozen=True)
 class RetrievalRequest:
-    """One explicit model run, forecast step, field inventory, and destination."""
+    """One explicit run, forecast step, field inventory, and destination."""
 
     cycle: datetime
     lead_hours: int
@@ -53,14 +55,20 @@ class RetrievedArtifact:
         request: RetrievalRequest,
     ) -> "RetrievedArtifact":
         """Verify a provider result and derive deterministic integrity facts."""
-        resolved = Path(path)
-        if not resolved.is_file():
+        target_root = request.target_dir.resolve(strict=True)
+        resolved = Path(path).resolve(strict=True)
+        if resolved != target_root and target_root not in resolved.parents:
+            raise ValueError("retrieved artifact must remain under target_dir")
+        _reject_symlink_components(Path(path), target_root)
+        if not resolved.is_file() or resolved.is_symlink():
             raise FileNotFoundError(
                 f"retrieved artifact does not exist: {resolved}"
             )
         size_bytes = resolved.stat().st_size
         if size_bytes == 0:
             raise ValueError("retrieved artifact is empty")
+        if size_bytes > _MAX_RETRIEVED_BYTES:
+            raise ValueError("retrieved artifact exceeds byte limit")
         return cls(
             path=resolved,
             provider=provider,
@@ -68,6 +76,24 @@ class RetrievedArtifact:
             sha256=_file_sha256(resolved),
             size_bytes=size_bytes,
         )
+
+
+def _reject_symlink_components(path: Path, target_root: Path) -> None:
+    """Reject symlinks from the target root through the returned artifact."""
+    candidate = Path(path)
+    if not candidate.is_absolute():
+        candidate = target_root / candidate
+    current = candidate
+    checked: list[Path] = []
+    while True:
+        checked.append(current)
+        if current in (target_root, current.parent):
+            break
+        current = current.parent
+    if target_root not in checked:
+        raise ValueError("retrieved artifact path escapes target_dir")
+    if any(component.is_symlink() for component in checked):
+        raise ValueError("retrieved artifact path must not contain symlinks")
 
 
 def _file_sha256(path: Path) -> str:

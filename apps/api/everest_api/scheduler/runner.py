@@ -10,7 +10,24 @@ from enum import Enum
 from everest_api.registry.redaction import redact_failure_detail
 
 
-ProviderCallable = Callable[[], int]
+@dataclass(frozen=True)
+class FailedLead:
+    """Bounded failure facts for one forecast lead within a provider run."""
+
+    lead_hours: int
+    failure_code: str
+    failure_detail: str
+
+
+@dataclass(frozen=True)
+class ProviderRunResult:
+    """Provider count plus any non-terminal per-lead failures."""
+
+    records_ingested: int
+    failed_leads: tuple[FailedLead, ...] = ()
+
+
+ProviderCallable = Callable[[], int | ProviderRunResult]
 
 
 class RunStatus(str, Enum):
@@ -42,6 +59,7 @@ class ProviderOutcome:  # pylint: disable=too-many-instance-attributes
     retryable: bool = False
     failure_code: str | None = None
     failure_detail: str | None = None
+    failed_leads: tuple[FailedLead, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -71,6 +89,15 @@ class SchedulerResult:
         """Return exact source IDs whose callables failed."""
         return tuple(
             item.source_id for item in self.outcomes if item.outcome == "failed"
+        )
+
+    @property
+    def degraded_sources(self) -> tuple[str, ...]:
+        """Return providers that ingested records but missed some leads."""
+        return tuple(
+            item.source_id
+            for item in self.outcomes
+            if item.outcome == "degraded"
         )
 
     @property
@@ -113,7 +140,13 @@ def run_once(
             continue
         started_at = datetime.now(UTC)
         try:
-            count = job.call()
+            run_result = job.call()
+            if isinstance(run_result, ProviderRunResult):
+                count = run_result.records_ingested
+                failed_leads = run_result.failed_leads
+            else:
+                count = run_result
+                failed_leads = ()
             if (
                 not isinstance(count, int)
                 or isinstance(count, bool)
@@ -124,10 +157,12 @@ def run_once(
                 )
             outcome = ProviderOutcome(
                 source_id=job.source_id,
-                outcome="succeeded",
+                outcome="degraded" if failed_leads else "succeeded",
                 started_at=started_at,
                 finished_at=datetime.now(UTC),
                 records_ingested=count,
+                retryable=bool(failed_leads),
+                failed_leads=failed_leads,
             )
         except Exception as error:  # pylint: disable=broad-exception-caught
             outcome = ProviderOutcome(
@@ -143,10 +178,11 @@ def run_once(
         _record(recorder, outcome)
 
     successes = sum(item.outcome == "succeeded" for item in outcomes)
-    failures = len(outcomes) - successes
-    if successes and not failures:
+    degraded = sum(item.outcome == "degraded" for item in outcomes)
+    failures = sum(item.outcome == "failed" for item in outcomes)
+    if successes and not failures and not degraded:
         status = RunStatus.SUCCESS
-    elif successes and failures:
+    elif (successes or degraded) and (failures or degraded):
         status = RunStatus.DEGRADED
     else:
         status = RunStatus.FAILURE

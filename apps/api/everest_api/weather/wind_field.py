@@ -2,60 +2,105 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
+from copy import deepcopy
+from datetime import datetime, timedelta
 import hashlib
 import json
+import math
+import os
 from pathlib import Path
 import re
+import stat
 from typing import Any
 
 
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
-_IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+_UTC_TIMESTAMP = re.compile(
+    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$"
+)
 _MAX_FRAME_BYTES = 16 * 1024 * 1024
+_MAX_POINTS = 250_000
+_MAX_AXIS = 1_000
+_MAX_CACHE_ENTRIES = 8
+_APPROVED_SOURCE_MODELS = {("ecmwf-ifs", "IFS")}
+_ALLOWED_FLAGS = {"missing_values"}
+_CACHE: OrderedDict[str, dict[str, Any]] = OrderedDict()
 
 
-# Reading is deliberately fail-closed at each integrity validation guard.
-# pylint: disable=too-many-return-statements
-def read_latest_wind_field(derived_root: Path | str) -> dict[str, Any] | None:
+def read_latest_wind_field(  # pylint: disable=too-many-return-statements,too-many-branches
+    derived_root: Path | str,
+) -> dict[str, Any] | None:
     """Read and integrity-check the latest local frame without external I/O."""
     root = Path(derived_root)
     if not root.is_absolute():
         return None
+    resolved_root = root.resolve(strict=False)
+    excluded_roots = [Path(__file__).resolve().parents[4]]
+    configured_raw_root = os.environ.get("EVEREST_RAW_ROOT")
+    if configured_raw_root:
+        raw_root = Path(configured_raw_root)
+        if raw_root.is_absolute():
+            excluded_roots.append(raw_root.resolve(strict=False))
+    for excluded in excluded_roots:
+        try:
+            resolved_root.relative_to(excluded)
+            return None
+        except ValueError:
+            try:
+                excluded.relative_to(resolved_root)
+                return None
+            except ValueError:
+                pass
     directory = root / "wind-field"
     pointer = directory / "latest.json"
-    if not pointer.is_file():
-        return None
     try:
-        pointer_payload = json.loads(pointer.read_text(encoding="utf-8"))
-        digest = pointer_payload["sha256"]
-        if set(pointer_payload) != {"sha256"} or not isinstance(digest, str):
+        _reject_symlink_components(directory)
+        pointer_payload = json.loads(
+            _read_regular(pointer, 1_024),
+            parse_constant=_bad,
+            object_pairs_hook=_unique_object,
+        )
+        if not isinstance(pointer_payload, dict) or set(pointer_payload) != {
+            "sha256"
+        }:
             return None
-        if not _DIGEST.fullmatch(digest):
+        digest = pointer_payload["sha256"]
+        if not isinstance(digest, str) or not _DIGEST.fullmatch(digest):
             return None
         target = directory / f"{digest}.json"
-        if not target.is_file() or target.stat().st_size > _MAX_FRAME_BYTES:
-            return None
-        payload = target.read_bytes()
+        payload = _read_regular(target, _MAX_FRAME_BYTES)
         if hashlib.sha256(payload).hexdigest() != digest:
             return None
-        frame = json.loads(payload)
+        cached = _CACHE.get(digest)
+        if cached is not None:
+            _CACHE.move_to_end(digest)
+            return deepcopy(cached)
+        frame = json.loads(
+            payload, parse_constant=_bad, object_pairs_hook=_unique_object
+        )
     except (
         OSError,
         UnicodeDecodeError,
         json.JSONDecodeError,
-        KeyError,
+        ValueError,
         TypeError,
     ):
         return None
     if not _is_public_frame(frame):
         return None
-    return frame
+    _CACHE[digest] = deepcopy(frame)
+    _CACHE.move_to_end(digest)
+    while len(_CACHE) > _MAX_CACHE_ENTRIES:
+        _CACHE.popitem(last=False)
+    return deepcopy(frame)
 
 
-def _is_public_frame(frame: Any) -> bool:
-    """Reject malformed or expanded payloads before crossing the API boundary."""
-    if not isinstance(frame, dict):
-        return False
+# Exact ``type`` checks intentionally reject bool, an int subclass.
+def _is_public_frame(  # pylint: disable=too-many-return-statements,too-many-branches,too-many-locals,unidiomatic-typecheck
+    frame: Any,
+) -> bool:
+    """Fully validate the versioned public frame before returning it."""
     required = {
         "source",
         "model",
@@ -77,30 +122,204 @@ def _is_public_frame(frame: Any) -> bool:
         "quality_flags",
         "schema_version",
     }
-    if set(frame) != required or frame.get("schema_version") != 1:
+    if not isinstance(frame, dict) or set(frame) != required:
         return False
-    if not all(
-        isinstance(frame.get(name), str) and bool(_IDENTIFIER.fullmatch(frame[name]))
-        for name in ("source", "model")
+    if type(frame["schema_version"]) is not int or frame["schema_version"] != 1:
+        return False
+    if (frame["source"], frame["model"]) not in _APPROVED_SOURCE_MODELS:
+        return False
+    if frame["level_units"] != "hPa" or frame["units"] != "m s-1":
+        return False
+    if frame["order"] != "latitude_longitude_c":
+        return False
+    lead = frame["lead_seconds"]
+    if type(lead) is not int or lead < 0:
+        return False
+    cycle = _timestamp(frame["cycle"])
+    valid_time = _timestamp(frame["valid_time"])
+    try:
+        expected_valid_time = cycle + timedelta(seconds=lead) if cycle else None
+    except OverflowError:
+        return False
+    if cycle is None or valid_time != expected_valid_time:
+        return False
+    if not _finite_number(frame["level"]):
+        return False
+    bounds = _bounds(frame["bounds"])
+    if bounds is None:
+        return False
+    latitude = _axis(frame["latitude"], _MAX_AXIS)
+    longitude = _axis(frame["longitude"], _MAX_AXIS)
+    if latitude is None or longitude is None:
+        return False
+    west, south, east, north = bounds
+    if min(latitude) < south or max(latitude) > north:
+        return False
+    if min(longitude) < west or max(longitude) > east:
+        return False
+    shape = frame["shape"]
+    if (
+        not isinstance(shape, list)
+        or len(shape) != 2
+        or any(type(item) is not int or item <= 0 for item in shape)
     ):
         return False
-    latitude = frame.get("latitude")
-    longitude = frame.get("longitude")
-    shape = frame.get("shape")
-    vectors = (frame.get("u"), frame.get("v"))
-    if not isinstance(latitude, list) or not isinstance(longitude, list):
+    point_count = len(latitude) * len(longitude)
+    if point_count > _MAX_POINTS or shape != [len(latitude), len(longitude)]:
         return False
-    if len(latitude) > 1_000 or len(longitude) > 1_000:
+    u_values = _vector(frame["u"], point_count)
+    v_values = _vector(frame["v"], point_count)
+    if u_values is None or v_values is None:
         return False
-    expected_shape = [len(latitude), len(longitude)]
-    if shape != expected_shape or expected_shape[0] * expected_shape[1] > 250_000:
+    flags = frame["quality_flags"]
+    if (
+        not isinstance(flags, list)
+        or len(flags) != len(set(flags))
+        or any(
+            type(flag) is not str or flag not in _ALLOWED_FLAGS
+            for flag in flags
+        )
+    ):
         return False
-    if frame.get("order") != "latitude_longitude_c":
+    has_missing = any(value is None for value in (*u_values, *v_values))
+    if ("missing_values" in flags) != has_missing:
         return False
-    point_count = expected_shape[0] * expected_shape[1]
-    return all(
-        isinstance(vector, list) and len(vector) == point_count for vector in vectors
+    return _summaries_match(frame, u_values, v_values)
+
+
+def _summaries_match(
+    frame: dict[str, Any], u_values: list, v_values: list
+) -> bool:
+    for name in ("minimum", "maximum"):
+        summary = frame[name]
+        if not isinstance(summary, dict) or set(summary) != {"u", "v"}:
+            return False
+        if any(
+            value is not None and not _finite_number(value)
+            for value in summary.values()
+        ):
+            return False
+    expected_minimum = {
+        "u": _summary(u_values, min),
+        "v": _summary(v_values, min),
+    }
+    expected_maximum = {
+        "u": _summary(u_values, max),
+        "v": _summary(v_values, max),
+    }
+    return (
+        frame["minimum"] == expected_minimum
+        and frame["maximum"] == expected_maximum
     )
+
+
+def _summary(values: list[float | None], operation) -> float | None:
+    present = [value for value in values if value is not None]
+    return operation(present) if present else None
+
+
+def _vector(value: Any, size: int) -> list[float | None] | None:
+    if not isinstance(value, list) or len(value) != size:
+        return None
+    if any(item is not None and not _finite_number(item) for item in value):
+        return None
+    return value
+
+
+def _axis(value: Any, limit: int) -> list[float] | None:
+    if not isinstance(value, list) or not value or len(value) > limit:
+        return None
+    if any(not _finite_number(item) for item in value) or len(
+        set(value)
+    ) != len(value):
+        return None
+    return value
+
+
+def _bounds(value: Any) -> tuple[float, float, float, float] | None:
+    if not isinstance(value, dict) or set(value) != {
+        "west",
+        "south",
+        "east",
+        "north",
+    }:
+        return None
+    west, south, east, north = (
+        value[name] for name in ("west", "south", "east", "north")
+    )
+    if not all(_finite_number(item) for item in (west, south, east, north)):
+        return None
+    if not -180 <= west < east <= 180 or not -90 <= south <= north <= 90:
+        return None
+    return west, south, east, north
+
+
+def _timestamp(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not _UTC_TIMESTAMP.fullmatch(value):
+        return None
+    try:
+        parsed = datetime.fromisoformat(f"{value[:-1]}+00:00")
+    except ValueError:
+        return None
+    return (
+        parsed
+        if parsed.tzinfo is not None and parsed.utcoffset() == timedelta(0)
+        else None
+    )
+
+
+def _finite_number(value: Any) -> bool:
+    return type(value) in (int, float) and math.isfinite(
+        value
+    )  # exact type rejects bool
+
+
+def _read_regular(path: Path, maximum_bytes: int) -> bytes:
+    if path.is_symlink():
+        raise ValueError("derived file must not be a symlink")
+    flags = (
+        os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    )
+    descriptor = os.open(path, flags)
+    try:
+        status = os.fstat(descriptor)
+        if not stat.S_ISREG(status.st_mode) or status.st_size > maximum_bytes:
+            raise ValueError("derived file must be a bounded regular file")
+        blocks: list[bytes] = []
+        remaining = maximum_bytes + 1
+        while remaining:
+            block = os.read(descriptor, min(remaining, 1024 * 1024))
+            if not block:
+                break
+            blocks.append(block)
+            remaining -= len(block)
+        payload = b"".join(blocks)
+        if len(payload) > maximum_bytes:
+            raise ValueError("derived file exceeds byte limit")
+        return payload
+    finally:
+        os.close(descriptor)
+
+
+def _reject_symlink_components(path: Path) -> None:
+    current = Path(path.anchor)
+    for part in path.parts[1:]:
+        current /= part
+        if current.is_symlink():
+            raise ValueError("derived path must not contain symlinks")
+
+
+def _bad(value: str) -> None:
+    raise ValueError(f"non-finite JSON constant rejected: {value}")
+
+
+def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate JSON object key rejected")
+        result[key] = value
+    return result
 
 
 __all__ = ["read_latest_wind_field"]

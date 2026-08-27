@@ -5,16 +5,16 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import case, or_, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from everest_api.weather.models import WeatherRecordModel
 from services.risk.engine import assess  # pylint: disable=import-error
 from services.weather.contract import (  # pylint: disable=import-error
     ForecastIdentity,
     RecordType,
     WeatherRecord,
 )
+from everest_api.weather.models import WeatherRecordModel
 
 
 _MAX_CANDIDATES = 100
@@ -81,11 +81,6 @@ def _unknown() -> dict[str, Any]:
     }
 
 
-def _rank(row: WeatherRecordModel) -> tuple[int, datetime]:
-    """Prefer explicit summit interpolation, then newest valid timestamp."""
-    return (1 if row.route_profile == "SUMMIT" else 0, _as_utc(row.timestamp))
-
-
 def _public_result(result: Any) -> dict[str, Any]:
     """Project only bounded non-secret engine output fields."""
     inputs = result.inputs if isinstance(result.inputs, dict) else {}
@@ -113,22 +108,18 @@ def assess_summit_window(session: Session) -> dict[str, Any]:
         select(WeatherRecordModel)
         .where(
             WeatherRecordModel.record_type == "forecast",
-            or_(
-                WeatherRecordModel.route_profile == "SUMMIT",
-                WeatherRecordModel.spatial_key.like("%hpa"),
-            ),
+            WeatherRecordModel.route_profile == "SUMMIT",
         )
-        .order_by(
-            case(
-                (WeatherRecordModel.route_profile == "SUMMIT", 1), else_=0
-            ).desc(),
-            WeatherRecordModel.timestamp.desc(),
-        )
+        .order_by(WeatherRecordModel.timestamp.desc())
         .limit(_MAX_CANDIDATES)
     )
-    candidates = session.scalars(statement).all()
+    candidates = [
+        row
+        for row in session.scalars(statement).all()
+        if row.route_profile == "SUMMIT"
+    ]
     if not candidates:
         return _unknown()
-    selected = max(candidates, key=_rank)
+    selected = max(candidates, key=lambda row: _as_utc(row.timestamp))
     result = assess(to_weather_record(selected), profile="SUMMIT")
     return _public_result(result)
