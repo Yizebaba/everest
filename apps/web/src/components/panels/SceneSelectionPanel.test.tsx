@@ -42,6 +42,7 @@ const weather = (
   temperature: -22,
   precipitation: 0,
   visibility: 10000,
+  relative_humidity: 47.6,
 });
 
 const risk: BackendRiskAssessment = {
@@ -75,6 +76,8 @@ describe("SceneSelectionPanel", () => {
     expect(html).toContain("near-model");
     expect(html).toContain("27.973365°");
     expect(html).toContain("86.930251°");
+    expect(html).toContain("Humidity");
+    expect(html).toContain("48 %");
   });
 
   it("does not fabricate weather or risk for a non-C4 camp", () => {

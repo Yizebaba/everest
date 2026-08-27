@@ -24,6 +24,7 @@ _PUBLIC_WEATHER_FIELDS = {
     "precipitation",
     "visibility",
     "pressure",
+    "relative_humidity",
     "source",
     "model",
     "forecast_cycle",
@@ -198,6 +199,33 @@ def test_profile_records_carry_their_height_label_and_pressure() -> None:
     assert record["route_profile"] == "SUMMIT"
     assert record["pressure"] == 314.0
     assert record["altitude"] == pytest.approx(5830.964752197266)
+
+
+class _HumidityColumnSession(_FakeSession):
+    """Return one record carrying a persisted relative-humidity value."""
+
+    def scalars(self, _statement: object) -> list[WeatherRecordModel]:
+        """Return a record whose humidity column is already populated."""
+        record = _weather_record()
+        record.relative_humidity = 47.6
+        return [record]
+
+
+def test_weather_records_carry_persisted_relative_humidity() -> None:
+    """A persisted humidity value is serialized, never invented.
+
+    The column already exists on WeatherRecordModel and the frontend already
+    consumes ``relative_humidity``, but records_payload omitted it so current
+    and forecast rows reached the client without humidity.
+    """
+    response = TestClient(create_app(_HumidityColumnSession)).get(
+        "/api/weather/current?source=dwd-icon"
+    )
+
+    assert response.status_code == 200
+    record = response.json()["records"][0]
+    assert record["relative_humidity"] == 47.6
+    assert "relative_humidity" in record
 
 
 def test_profile_rejects_unsupported_profile_and_echoes_correlation_id() -> (

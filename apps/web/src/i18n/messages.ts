@@ -25,6 +25,7 @@ export const en = {
     precipitation: "Precipitation",
     visibility: "Visibility",
     altitude: "Altitude",
+    humidity: "Humidity",
   },
   layers: {
     terrain: "Terrain",
@@ -122,6 +123,7 @@ export const zh = {
     precipitation: "降水",
     visibility: "能见度",
     altitude: "海拔",
+    humidity: "湿度",
   },
   layers: {
     terrain: "地形",

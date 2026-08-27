@@ -222,6 +222,7 @@ def create_app(
                 "precipitation": item.precipitation,
                 "visibility": item.visibility,
                 "pressure": item.pressure,
+                "relative_humidity": item.relative_humidity,
                 "source": item.source_id,
                 "model": item.model,
                 "forecast_cycle": (_utc_z(item.forecast_cycle)),

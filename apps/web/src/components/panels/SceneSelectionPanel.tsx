@@ -11,6 +11,7 @@ import type { SceneSelection } from "@/cesium/selection";
 import type { RouteCoordinate } from "@/cesium/selection";
 import { t, type Locale } from "@/i18n/t";
 import {
+  formatHumidity,
   formatTemperature,
   formatVisibility,
   formatWindDirection,
@@ -165,6 +166,12 @@ export function SceneSelectionPanel({
                 <div>
                   <dt>{t("units.visibility", locale)}</dt>
                   <dd>{formatVisibility(nearest.visibility)}</dd>
+                </div>
+                <div>
+                  <dt>{t("units.humidity", locale)}</dt>
+                  <dd>
+                    {formatHumidity(nearest.relative_humidity ?? null)}
+                  </dd>
                 </div>
               </dl>
             </>

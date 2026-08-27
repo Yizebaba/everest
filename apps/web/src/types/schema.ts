@@ -66,6 +66,7 @@ export interface WeatherVariable {
   windDirectionDeg: number | null;
   precipitationMm: number | null;
   visibilityM: number | null;
+  relativeHumidityPct: number | null;
 }
 
 export interface WeatherRecord extends WeatherVariable {

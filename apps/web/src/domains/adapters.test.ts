@@ -24,6 +24,7 @@ const canonical: CanonicalWeatherRecord = {
   temperature: -28,
   precipitation: 0,
   visibility: null,
+  relative_humidity: 47.6,
 };
 
 describe("Phase 1 presentation adapters", () => {
@@ -35,6 +36,7 @@ describe("Phase 1 presentation adapters", () => {
 
     expect(weather.current[0].canonical).toBe(canonical);
     expect(weather.current[0].source).toBe("future-provider");
+    expect(weather.current[0].relativeHumidityPct).toBe(47.6);
   });
 
   it("does not present a tile maximum as point elevation", () => {

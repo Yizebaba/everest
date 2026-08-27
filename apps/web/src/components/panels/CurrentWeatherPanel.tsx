@@ -3,6 +3,7 @@
 import type { CurrentResponse } from "@/api/types";
 import type { FetchState } from "@/state/useApiFetch";
 import { t, type Locale } from "@/i18n/t";
+import { formatHumidity } from "@/lib/units";
 
 export interface CurrentWeatherPanelProps {
   state: FetchState<CurrentResponse>;
@@ -92,8 +93,8 @@ export function CurrentWeatherPanel({
                   {record.relative_humidity !== null &&
                     record.relative_humidity !== undefined && (
                       <div>
-                        <dt>Humidity</dt>
-                        <dd>{record.relative_humidity.toFixed(0)}%</dd>
+                        <dt>{t("units.humidity", locale)}</dt>
+                        <dd>{formatHumidity(record.relative_humidity)}</dd>
                       </div>
                     )}
                   {record.precipitation !== null &&

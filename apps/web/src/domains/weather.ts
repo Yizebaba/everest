@@ -22,6 +22,7 @@ export function weatherFromApi(
     windDirectionDeg: record.wind_direction ?? null,
     precipitationMm: record.precipitation ?? null,
     visibilityM: record.visibility ?? null,
+    relativeHumidityPct: record.relative_humidity ?? null,
   });
   return {
     current: (current.records ?? []).map(toRecord),
