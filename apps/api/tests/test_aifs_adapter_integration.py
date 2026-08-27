@@ -368,8 +368,8 @@ def test_retained_aifs_grib_to_postgres_and_bounded_public_forecast(
         assert record.wind_speed == pytest.approx(0.16091116689523915)
         assert record.wind_direction == pytest.approx(86.4729776688032)
         assert record.precipitation == pytest.approx(0.0)
-        assert source.status == "verified"
-        assert source.health_status == "healthy"
+        assert source.status == "connected"
+        assert source.health_status == "unknown"
         assert source.last_success_at == raw.retrieved_at
 
     query = (

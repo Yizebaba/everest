@@ -330,8 +330,8 @@ def test_retained_icon_grib_to_postgres_and_public_forecast(
         assert record.spatial_key == _SPATIAL_KEY
         assert record.temperature == pytest.approx(-3.3708862304687273)
         assert record.wind_speed == pytest.approx(2.0440636678148207)
-        assert source.status == "verified"
-        assert source.health_status == "healthy"
+        assert source.status == "connected"
+        assert source.health_status == "unknown"
         assert source.last_success_at == raw.retrieved_at
 
     with TestClient(create_app(factory)) as client:

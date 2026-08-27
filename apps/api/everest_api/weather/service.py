@@ -143,8 +143,11 @@ class WeatherIngestionService(IngestionPort):
                 )
                 if source is None:
                     raise LookupError(f"Unknown source: {artifact.source_id}")
-                source.status = "verified"
-                source.health_status = "healthy"
+                # A successful canonical insert proves the source is reachable
+                # and writing records. It does not prove operational QA, so
+                # lifecycle stops at connected and health_status is left as-is
+                # (seeds start as unknown).
+                source.status = "connected"
                 source.last_success_at = artifact.retrieved_at
                 session.commit()
             except Exception:
@@ -665,8 +668,10 @@ class WeatherQueryService:
         # Signed seconds would order the past backwards; the absolute gap
         # plus an "is it still in the future" tiebreak yields newest-past
         # first, then soonest-future.
-        distance = func.abs(
-            func.extract("epoch", WeatherRecordModel.timestamp - moment)
+        distance = func.abs(  # pylint: disable=not-callable
+            func.extract(  # pylint: disable=not-callable
+                "epoch", WeatherRecordModel.timestamp - moment
+            )
         )
         ranked = select(
             WeatherRecordModel.record_id.label("record_id"),

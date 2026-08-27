@@ -151,8 +151,8 @@ def test_gfs_adapter_persists_factual_record_and_public_forecast(
             == 1
         )
         source = session.get(DataSourceRegistryModel, "noaa-gfs")
-        assert source.status == "verified"
-        assert source.health_status == "healthy"
+        assert source.status == "connected"
+        assert source.health_status == "unknown"
         assert source.last_success_at == raw.retrieved_at
         record = session.scalar(select(WeatherRecordModel))
         assert record.model == "GFS"
