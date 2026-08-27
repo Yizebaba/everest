@@ -123,89 +123,75 @@ def _seed(session) -> None:
 
 
 def _ingest_ifs(service, cycle: datetime) -> int | ProviderRunResult:
-    """Ingest the near-surface IFS fields for every published lead of a cycle.
-
-    These are 10 m winds, 2 m temperature and surface precipitation over the
-    model's smoothed 0.25 deg orography (~6008 m at this grid point). They
-    describe conditions just above that ground, not free-air conditions at
-    6008 m, and never summit conditions - hence the ``:sfc`` key suffix. Summit
-    and camp-height values come from the pressure-level path.
-    """
+    """Ingest every published near-surface IFS lead for one cycle."""
     connector = EcmwfOpenDataConnector(RAW_ROOT)
-    orography = None  # model orography is time-invariant within a cycle
+    orography = None
     count = 0
     failed_leads: list[FailedLead] = []
     for lead in LEADS_IFS:
         try:
-            retrieval = connector.retrieve(cycle, lead_hours=lead)
+            orography = _ingest_ifs_lead(
+                service, connector, cycle, lead, orography
+            )
+            count += 1
         except Exception as error:  # pylint: disable=broad-exception-caught
-            if lead == 0:
-                raise  # no lead 0 means the cycle itself is not published
-            # A later lead the provider has not published yet must not discard
-            # the leads already ingested for this cycle.
+            if lead == 0 and count == 0:
+                raise
             print(f"  surface +{lead}h unavailable; skipping lead")
             failed_leads.append(_failed_lead(lead, error))
-            continue
-        payload = retrieval.payload_path.read_bytes()
-        messages = parse_grib_bytes(payload)
-        record = normalize_ifs(messages, LAT, LON)
-        if math.isnan(record.altitude):
-            if orography is None:
-                print(f"  surface +{lead}h has no orography yet; skipping lead")
-                failed_leads.append(
-                    FailedLead(
-                        lead, "MissingOrography", "orography unavailable"
-                    )
-                )
-                continue
-            # Reuse the orography decoded at lead 0: the model's surface height
-            # does not change across leads of one cycle, so this is the same
-            # measured value rather than a substituted one.
-            from dataclasses import replace
-
-            record = replace(record, altitude=orography)
-        else:
-            orography = record.altitude
-        descriptor = RawArtifactDescriptor(
-            "ecmwf-ifs",
-            "ifs-oper",
-            str(retrieval.payload_path),
-            retrieval.checksum_sha256,
-            retrieval.cycle,
-            "GRIB2",
-            retrieval.size_bytes,
-            forecast_cycle=retrieval.cycle,
-            forecast_lead_seconds=lead * 3600,
-            valid_time=cycle + timedelta(hours=lead),
-            metadata={
-                "provider_payload_sha256": retrieval.checksum_sha256,
-                "provider_payload_size_bytes": retrieval.size_bytes,
-                "provider_lead_seconds": lead * 3600,
-            },
-        )
-        canonical = CanonicalRecordInput(
-            record.record_type.value,
-            record.timestamp,
-            record.latitude,
-            record.longitude,
-            record.altitude,
-            f"ifs:0p25:{record.latitude:.1f}:{record.longitude:.1f}:sfc",
-            record.source,
-            record.model,
-            tuple(record.quality_flags),
-            wind_speed=record.wind_speed,
-            wind_direction=record.wind_direction,
-            temperature=record.temperature,
-            precipitation=record.precipitation,
-            visibility=record.visibility,
-            forecast_cycle=record.forecast.cycle,
-            forecast_lead_seconds=int(
-                record.forecast.lead_time.total_seconds()
-            ),
-        )
-        service.ingest(descriptor, (canonical,))
-        count += 1
     return _provider_result(count, failed_leads)
+
+
+def _ingest_ifs_lead(service, connector, cycle, lead, orography):
+    """Run retrieval through persistence for one surface lead."""
+    retrieval = connector.retrieve(cycle, lead_hours=lead)
+    messages = parse_grib_bytes(retrieval.payload_path.read_bytes())
+    record = normalize_ifs(messages, LAT, LON)
+    if math.isnan(record.altitude):
+        if orography is None:
+            raise RuntimeError("orography unavailable")
+        from dataclasses import replace
+
+        record = replace(record, altitude=orography)
+    else:
+        orography = record.altitude
+    descriptor = RawArtifactDescriptor(
+        "ecmwf-ifs",
+        "ifs-oper",
+        str(retrieval.payload_path),
+        retrieval.checksum_sha256,
+        retrieval.cycle,
+        "GRIB2",
+        retrieval.size_bytes,
+        forecast_cycle=retrieval.cycle,
+        forecast_lead_seconds=lead * 3600,
+        valid_time=cycle + timedelta(hours=lead),
+        metadata={
+            "provider_payload_sha256": retrieval.checksum_sha256,
+            "provider_payload_size_bytes": retrieval.size_bytes,
+            "provider_lead_seconds": lead * 3600,
+        },
+    )
+    canonical = CanonicalRecordInput(
+        record.record_type.value,
+        record.timestamp,
+        record.latitude,
+        record.longitude,
+        record.altitude,
+        f"ifs:0p25:{record.latitude:.1f}:{record.longitude:.1f}:sfc",
+        record.source,
+        record.model,
+        tuple(record.quality_flags),
+        wind_speed=record.wind_speed,
+        wind_direction=record.wind_direction,
+        temperature=record.temperature,
+        precipitation=record.precipitation,
+        visibility=record.visibility,
+        forecast_cycle=record.forecast.cycle,
+        forecast_lead_seconds=int(record.forecast.lead_time.total_seconds()),
+    )
+    service.ingest(descriptor, (canonical,))
+    return orography
 
 
 def _fetch_pressure(cycle: datetime, lead_hours: int = 0) -> bytes:
@@ -427,76 +413,73 @@ def _ingest_ifs_pressure(  # pylint: disable=too-many-locals
     for lead in leads:
         try:
             payload = _fetch_pressure(cycle, lead)
+            messages = parse_pressure_messages(payload)
+            records = normalize_pressure_levels(
+                messages, LAT, LON, PRESSURE_LEVELS
+            )
+            digest = hashlib.sha256(payload).hexdigest()
+            artifact_path = RAW_ROOT / "ecmwf-ifs" / digest / "pressure.grib2"
+            artifact_path.parent.mkdir(parents=True, exist_ok=True)
+            if not artifact_path.exists():
+                artifact_path.write_bytes(payload)
+            try:
+                wind_path = _materialize_ifs_wind_field(
+                    artifact_path, cycle, lead
+                )
+                if wind_path is not None:
+                    print(f"  wind field +{lead}h: {wind_path.name}")
+            except Exception:  # pylint: disable=broad-exception-caught
+                # This derived visualization remains explicitly non-blocking.
+                print(f"  wind field +{lead}h unavailable; continuing")
+            descriptor = RawArtifactDescriptor(
+                "ecmwf-ifs",
+                "ifs-pressure",
+                str(artifact_path),
+                digest,
+                cycle,
+                "GRIB2",
+                len(payload),
+                forecast_cycle=cycle,
+                forecast_lead_seconds=lead * 3600,
+                valid_time=cycle + timedelta(hours=lead),
+                metadata={
+                    "provider_payload_sha256": digest,
+                    "provider_payload_size_bytes": len(payload),
+                    "provider_lead_seconds": lead * 3600,
+                    "provider_levels_hpa": ",".join(PRESSURE_LEVELS),
+                },
+            )
+            for record in records:
+                canonical = CanonicalRecordInput(
+                    "forecast",
+                    record.timestamp,
+                    record.latitude,
+                    record.longitude,
+                    record.altitude,
+                    f"ifs:0p25:{record.latitude:.1f}:{record.longitude:.1f}"
+                    f":{record.level_hpa}hpa",
+                    record.source,
+                    record.model,
+                    _pressure_quality_flags(record),
+                    wind_speed=record.wind_speed,
+                    wind_direction=record.wind_direction,
+                    temperature=record.temperature_c,
+                    forecast_cycle=record.cycle,
+                    forecast_lead_seconds=record.lead_seconds,
+                )
+                service.ingest(descriptor, (canonical,))
+                count += 1
+            profiles = _ingest_route_profiles(service, descriptor, records)
+            count += profiles
+            print(
+                f"  pressure +{lead}h: {len(records)} levels, "
+                f"{profiles} camps"
+            )
         except Exception as error:  # pylint: disable=broad-exception-caught
-            # A lead that the provider has not published yet must not discard
-            # the leads that are already available.
+            if lead == 0 and count == 0:
+                raise
             print(f"  pressure +{lead}h unavailable; skipping lead")
             failed_leads.append(_failed_lead(lead, error))
-            continue
-        messages = parse_pressure_messages(payload)
-        records = normalize_pressure_levels(messages, LAT, LON, PRESSURE_LEVELS)
-        digest = hashlib.sha256(payload).hexdigest()
-        artifact_path = RAW_ROOT / "ecmwf-ifs" / digest / "pressure.grib2"
-        artifact_path.parent.mkdir(parents=True, exist_ok=True)
-        if not artifact_path.exists():
-            artifact_path.write_bytes(payload)
-        try:
-            wind_path = _materialize_ifs_wind_field(artifact_path, cycle, lead)
-            if wind_path is not None:
-                print(f"  wind field +{lead}h: {wind_path.name}")
-        except Exception:  # pylint: disable=broad-exception-caught
-            # Wind visualization is an additive derived product. A decoder or
-            # materialization failure must not roll back canonical weather that
-            # was already retrieved and can still serve every existing API.
-            print(f"  wind field +{lead}h unavailable; continuing")
-        descriptor = RawArtifactDescriptor(
-            "ecmwf-ifs",
-            "ifs-pressure",
-            str(artifact_path),
-            digest,
-            cycle,
-            "GRIB2",
-            len(payload),
-            forecast_cycle=cycle,
-            forecast_lead_seconds=lead * 3600,
-            valid_time=cycle + timedelta(hours=lead),
-            metadata={
-                "provider_payload_sha256": digest,
-                "provider_payload_size_bytes": len(payload),
-                "provider_lead_seconds": lead * 3600,
-                # Joined rather than a list: the contract boundary accepts only
-                # JSON scalars, and passing a list raised a TypeError that the
-                # cycle loop then reported as "cycle unavailable", so no
-                # pressure record was ever ingested.
-                "provider_levels_hpa": ",".join(PRESSURE_LEVELS),
-            },
-        )
-        for record in records:
-            canonical = CanonicalRecordInput(
-                "forecast",
-                record.timestamp,
-                # The grid point actually sampled, not the summit coordinates:
-                # storing LAT/LON here claimed a value had been produced for a
-                # location the model never evaluated.
-                record.latitude,
-                record.longitude,
-                record.altitude,
-                f"ifs:0p25:{record.latitude:.1f}:{record.longitude:.1f}"
-                f":{record.level_hpa}hpa",
-                record.source,
-                record.model,
-                _pressure_quality_flags(record),
-                wind_speed=record.wind_speed,
-                wind_direction=record.wind_direction,
-                temperature=record.temperature_c,
-                forecast_cycle=record.cycle,
-                forecast_lead_seconds=record.lead_seconds,
-            )
-            service.ingest(descriptor, (canonical,))
-            count += 1
-        profiles = _ingest_route_profiles(service, descriptor, records)
-        count += profiles
-        print(f"  pressure +{lead}h: {len(records)} levels, {profiles} camps")
     return _provider_result(count, failed_leads)
 
 
@@ -514,7 +497,16 @@ def _run_ifs_with_fallback(service) -> int | ProviderRunResult:
             print(f"ingesting IFS cycle {cycle.isoformat()}")
             surface = _as_provider_result(_ingest_ifs(service, cycle))
             print(f"ingested {surface.records_ingested} surface leads")
-            pressure = _as_provider_result(_ingest_ifs_pressure(service, cycle))
+            try:
+                pressure = _as_provider_result(
+                    _ingest_ifs_pressure(service, cycle)
+                )
+            except Exception as error:  # pylint: disable=broad-exception-caught
+                if surface.records_ingested == 0:
+                    raise
+                # Surface rows from this cycle are already durable. Falling back
+                # now would mix an older pressure cycle into newer-cycle data.
+                pressure = ProviderRunResult(0, (_failed_lead(0, error),))
             print(f"ingested {pressure.records_ingested} pressure records")
             total = surface.records_ingested + pressure.records_ingested
             if total == 0:

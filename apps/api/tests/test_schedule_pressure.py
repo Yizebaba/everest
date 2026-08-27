@@ -7,12 +7,32 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 import urllib.request
 
 import pytest
 import xarray as xr
 
+from everest_api.scheduler import ProviderRunResult
 import schedule_forecast as sched
+
+
+def _pressure_record(cycle: datetime, lead: int) -> object:
+    """Build a normalized pressure record for scheduler pipeline tests."""
+    return SimpleNamespace(
+        timestamp=cycle,
+        latitude=28.0,
+        longitude=87.0,
+        altitude=7600.0,
+        level_hpa=400,
+        source="ecmwf-ifs",
+        model="IFS",
+        wind_speed=20.0,
+        wind_direction=270.0,
+        temperature_c=-30.0,
+        cycle=cycle,
+        lead_seconds=lead * 3600,
+    )
 
 
 def test_fetch_pressure_selects_expected_levels(monkeypatch) -> None:
@@ -199,3 +219,68 @@ def test_future_wind_lead_does_not_replace_latest_pointer(
     assert future != lead_zero
     assert future.is_file()
     assert (root / "wind-field" / "latest.json").read_bytes() == pointer_before
+
+
+@pytest.mark.parametrize("failure_stage", ("parse", "ingest"))
+def test_pressure_nonzero_pipeline_failure_keeps_success_and_degrades(
+    monkeypatch, tmp_path: Path, failure_stage: str
+) -> None:
+    """Pressure parse and persistence failures are isolated after lead zero."""
+    cycle = datetime(2026, 8, 27, tzinfo=UTC)
+    parse_calls = 0
+
+    def parse(payload):
+        nonlocal parse_calls
+        parse_calls += 1
+        if failure_stage == "parse" and parse_calls == 2:
+            raise ValueError("access_token=pressure-secret")
+        return int(payload.decode())
+
+    def normalize(lead, *_args):
+        return [_pressure_record(cycle, lead)]
+
+    ingest_calls = 0
+
+    def ingest(*_args) -> None:
+        nonlocal ingest_calls
+        ingest_calls += 1
+        if failure_stage == "ingest" and ingest_calls == 2:
+            raise RuntimeError("password=pressure-secret")
+
+    service = SimpleNamespace(ingest=ingest)
+    monkeypatch.setattr(sched, "RAW_ROOT", tmp_path)
+    monkeypatch.setattr(
+        sched, "_fetch_pressure", lambda _cycle, lead: str(lead).encode()
+    )
+    monkeypatch.setattr(sched, "parse_pressure_messages", parse)
+    monkeypatch.setattr(sched, "normalize_pressure_levels", normalize)
+    monkeypatch.setattr(sched, "_pressure_quality_flags", lambda _record: ())
+    monkeypatch.setattr(sched, "_ingest_route_profiles", lambda *_args: 0)
+    monkeypatch.setattr(
+        sched, "_materialize_ifs_wind_field", lambda *_args: None
+    )
+
+    result = sched._as_provider_result(
+        sched._ingest_ifs_pressure(service, cycle, leads=(0, 6))
+    )
+
+    assert isinstance(result, ProviderRunResult)
+    assert result.records_ingested == 1
+    assert result.failed_leads[0].lead_hours == 6
+    assert "secret" not in result.failed_leads[0].failure_detail
+
+
+def test_pressure_lead_zero_pipeline_failure_signals_cycle_fallback(
+    monkeypatch,
+) -> None:
+    """A complete pressure lead-zero parse failure remains exceptional."""
+    cycle = datetime(2026, 8, 27, tzinfo=UTC)
+    monkeypatch.setattr(sched, "_fetch_pressure", lambda *_args: b"bad")
+    monkeypatch.setattr(
+        sched,
+        "parse_pressure_messages",
+        lambda _payload: (_ for _ in ()).throw(ValueError("bad lead zero")),
+    )
+
+    with pytest.raises(ValueError, match="bad lead zero"):
+        sched._ingest_ifs_pressure(SimpleNamespace(), cycle, leads=(0,))

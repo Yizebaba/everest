@@ -5,7 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
+import os
 from pathlib import Path
+import stat
 from typing import Any, Callable
 
 _MAX_RETRIEVED_BYTES = 512 * 1024 * 1024
@@ -31,9 +33,13 @@ class RetrievalRequest:
             raise ValueError("retrieval variables must not be blank")
         if len(set(self.variables)) != len(self.variables):
             raise ValueError("retrieval variables must be unique")
+        target_dir = Path(self.target_dir)
+        if not target_dir.is_absolute():
+            raise ValueError("retrieval target_dir must be absolute")
+        _reject_symlink_components(target_dir)
         object.__setattr__(self, "cycle", self.cycle.astimezone(timezone.utc))
         object.__setattr__(self, "variables", tuple(self.variables))
-        object.__setattr__(self, "target_dir", Path(self.target_dir))
+        object.__setattr__(self, "target_dir", target_dir.resolve())
 
 
 @dataclass(frozen=True)
@@ -47,6 +53,12 @@ class RetrievedArtifact:
     size_bytes: int
     media_type: str = "application/x-grib2"
 
+    def __post_init__(self) -> None:
+        artifact_path = Path(self.path)
+        if not artifact_path.is_absolute():
+            raise ValueError("retrieved artifact path must be absolute")
+        object.__setattr__(self, "path", artifact_path)
+
     @classmethod
     def from_path(
         cls,
@@ -55,16 +67,16 @@ class RetrievedArtifact:
         request: RetrievalRequest,
     ) -> "RetrievedArtifact":
         """Verify a provider result and derive deterministic integrity facts."""
+        candidate = Path(path)
+        if not candidate.is_absolute():
+            raise ValueError("retrieved artifact path must be absolute")
+        _reject_symlink_components(request.target_dir)
+        _reject_symlink_components(candidate)
         target_root = request.target_dir.resolve(strict=True)
-        resolved = Path(path).resolve(strict=True)
+        resolved = candidate.resolve(strict=True)
         if resolved != target_root and target_root not in resolved.parents:
             raise ValueError("retrieved artifact must remain under target_dir")
-        _reject_symlink_components(Path(path), target_root)
-        if not resolved.is_file() or resolved.is_symlink():
-            raise FileNotFoundError(
-                f"retrieved artifact does not exist: {resolved}"
-            )
-        size_bytes = resolved.stat().st_size
+        size_bytes, sha256 = _verified_file_facts(resolved)
         if size_bytes == 0:
             raise ValueError("retrieved artifact is empty")
         if size_bytes > _MAX_RETRIEVED_BYTES:
@@ -73,36 +85,42 @@ class RetrievedArtifact:
             path=resolved,
             provider=provider,
             request=request,
-            sha256=_file_sha256(resolved),
+            sha256=sha256,
             size_bytes=size_bytes,
         )
 
 
-def _reject_symlink_components(path: Path, target_root: Path) -> None:
-    """Reject symlinks from the target root through the returned artifact."""
+def _reject_symlink_components(path: Path) -> None:
+    """Inspect the lexical path, without resolving away any symlink."""
     candidate = Path(path)
-    if not candidate.is_absolute():
-        candidate = target_root / candidate
-    current = candidate
-    checked: list[Path] = []
-    while True:
-        checked.append(current)
-        if current in (target_root, current.parent):
-            break
-        current = current.parent
-    if target_root not in checked:
-        raise ValueError("retrieved artifact path escapes target_dir")
-    if any(component.is_symlink() for component in checked):
-        raise ValueError("retrieved artifact path must not contain symlinks")
+    current = Path(candidate.anchor)
+    for part in candidate.parts[1:]:
+        current /= part
+        if current.is_symlink():
+            raise ValueError("retrieval path must not contain symlinks")
 
 
-def _file_sha256(path: Path) -> str:
-    """Hash a potentially large GRIB artifact without loading it into memory."""
+def _verified_file_facts(path: Path) -> tuple[int, str]:
+    """Open without following the final link where supported, then hash."""
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as error:
+        raise FileNotFoundError(
+            f"retrieved artifact does not exist: {path}"
+        ) from error
+
     digest = hashlib.sha256()
-    with path.open("rb") as stream:
+    with os.fdopen(descriptor, "rb") as stream:
+        file_status = os.fstat(stream.fileno())
+        if not stat.S_ISREG(file_status.st_mode):
+            raise FileNotFoundError(
+                f"retrieved artifact does not exist: {path}"
+            )
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
-    return digest.hexdigest()
+    return file_status.st_size, digest.hexdigest()
 
 
 def _import_xarray() -> Any:

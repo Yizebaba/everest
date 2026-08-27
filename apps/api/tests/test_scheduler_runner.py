@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -20,6 +22,38 @@ from everest_api.scheduler import (
 )
 from everest_api.scheduler.recording import DataSourceRunRecorder
 import schedule_forecast
+
+
+def _surface_record(cycle: datetime, lead: int) -> SimpleNamespace:
+    """Build the smallest normalized IFS surface record used by scheduler tests."""
+    return SimpleNamespace(
+        record_type=SimpleNamespace(value="forecast"),
+        timestamp=cycle + timedelta(hours=lead),
+        latitude=28.0,
+        longitude=87.0,
+        altitude=6000.0,
+        source="ecmwf-ifs",
+        model="IFS",
+        quality_flags=("clean",),
+        wind_speed=10.0,
+        wind_direction=270.0,
+        temperature=-20.0,
+        precipitation=0.0,
+        visibility=None,
+        forecast=SimpleNamespace(cycle=cycle, lead_time=timedelta(hours=lead)),
+    )
+
+
+def _surface_retrieval(tmp_path: Path, cycle: datetime, lead: int):
+    """Create one retained retrieval result with deterministic metadata."""
+    payload_path = tmp_path / f"surface-{lead}.grib2"
+    payload_path.write_bytes(str(lead).encode())
+    return SimpleNamespace(
+        payload_path=payload_path,
+        checksum_sha256=f"sha-{lead}",
+        cycle=cycle,
+        size_bytes=payload_path.stat().st_size,
+    )
 
 
 class _FakeSession:
@@ -217,6 +251,108 @@ def test_failure_detail_is_bounded_and_redacted() -> None:
     result = run_once((ProviderJob("ecmwf-ifs", fails),))
 
     assert result.outcomes[0].failure_detail == "access_token=[REDACTED]"
+
+
+@pytest.mark.parametrize("failure_stage", ("parse", "ingest"))
+def test_surface_nonzero_pipeline_failure_keeps_success_and_degrades(
+    monkeypatch, tmp_path: Path, failure_stage: str
+) -> None:
+    """Parse and persistence failures after lead zero are bounded per lead."""
+    cycle = datetime(2026, 8, 27, tzinfo=UTC)
+
+    connector = SimpleNamespace(
+        retrieve=lambda requested_cycle, lead_hours: _surface_retrieval(
+            tmp_path, requested_cycle, lead_hours
+        )
+    )
+
+    parse_calls = 0
+
+    def parse(payload):
+        nonlocal parse_calls
+        parse_calls += 1
+        if failure_stage == "parse" and parse_calls == 2:
+            raise ValueError("access_token=surface-secret")
+        return int(payload.decode())
+
+    def normalize(lead, *_args):
+        return _surface_record(cycle, lead)
+
+    ingest_calls = 0
+
+    def ingest(*_args) -> None:
+        nonlocal ingest_calls
+        ingest_calls += 1
+        if failure_stage == "ingest" and ingest_calls == 2:
+            raise RuntimeError("password=surface-secret")
+
+    service = SimpleNamespace(ingest=ingest)
+    monkeypatch.setattr(schedule_forecast, "LEADS_IFS", [0, 3])
+    monkeypatch.setattr(
+        schedule_forecast, "EcmwfOpenDataConnector", lambda _root: connector
+    )
+    monkeypatch.setattr(schedule_forecast, "parse_grib_bytes", parse)
+    monkeypatch.setattr(schedule_forecast, "normalize_ifs", normalize)
+
+    result = schedule_forecast._as_provider_result(
+        schedule_forecast._ingest_ifs(service, cycle)
+    )
+
+    assert isinstance(result, ProviderRunResult)
+    assert result.records_ingested == 1
+    assert result.failed_leads[0].lead_hours == 3
+    assert "secret" not in result.failed_leads[0].failure_detail
+
+
+def test_surface_lead_zero_pipeline_failure_signals_cycle_fallback(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """A complete lead-zero parse failure remains a cycle-unavailable signal."""
+    cycle = datetime(2026, 8, 27, tzinfo=UTC)
+    connector = SimpleNamespace(
+        retrieve=lambda requested_cycle, lead_hours: _surface_retrieval(
+            tmp_path, requested_cycle, lead_hours
+        )
+    )
+    monkeypatch.setattr(schedule_forecast, "LEADS_IFS", [0])
+    monkeypatch.setattr(
+        schedule_forecast, "EcmwfOpenDataConnector", lambda _root: connector
+    )
+    monkeypatch.setattr(
+        schedule_forecast,
+        "parse_grib_bytes",
+        lambda _payload: (_ for _ in ()).throw(ValueError("bad lead zero")),
+    )
+
+    with pytest.raises(ValueError, match="bad lead zero"):
+        schedule_forecast._ingest_ifs(SimpleNamespace(), cycle)
+
+
+def test_partial_new_cycle_success_never_falls_back_and_mixes_cycles(
+    monkeypatch,
+) -> None:
+    """Persisted surface success makes pressure lead-zero failure degraded."""
+    surface_cycles = []
+    pressure_cycles = []
+
+    def surface(_service, cycle):
+        surface_cycles.append(cycle)
+        return 1
+
+    def pressure(_service, cycle):
+        pressure_cycles.append(cycle)
+        raise RuntimeError("pressure parse failed")
+
+    monkeypatch.setattr(schedule_forecast, "_ingest_ifs", surface)
+    monkeypatch.setattr(schedule_forecast, "_ingest_ifs_pressure", pressure)
+
+    result = schedule_forecast._run_ifs_with_fallback(object())
+
+    assert isinstance(result, ProviderRunResult)
+    assert result.records_ingested == 1
+    assert result.failed_leads[0].lead_hours == 0
+    assert len(surface_cycles) == 1
+    assert pressure_cycles == surface_cycles
 
 
 def test_ifs_job_falls_back_to_an_older_cycle_on_unavailable_cycle(

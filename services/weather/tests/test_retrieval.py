@@ -121,17 +121,51 @@ def test_open_grib_uses_cfgrib_without_persistent_index(
     ]
 
 
-def test_retrieval_request_is_immutable_and_normalizes_utc() -> None:
+def test_retrieval_request_is_immutable_and_normalizes_utc(
+    tmp_path: Path,
+) -> None:
     """Requests reject ambiguous cycles and expose immutable tuples."""
     cycle = datetime(2026, 8, 27, 6, tzinfo=timezone.utc)
     request = RetrievalRequest(
-        cycle=cycle, lead_hours=6, variables=("2t",), target_dir=Path("raw")
+        cycle=cycle, lead_hours=6, variables=("2t",), target_dir=tmp_path
     )
     assert request.cycle == cycle
     with pytest.raises((AttributeError, TypeError)):
         request.lead_hours = 12  # type: ignore[misc]
     with pytest.raises(ValueError, match="timezone-aware"):
-        RetrievalRequest(datetime(2026, 8, 27), 0, ("2t",), Path("raw"))
+        RetrievalRequest(datetime(2026, 8, 27), 0, ("2t",), tmp_path)
+
+
+def test_retrieval_request_rejects_relative_target_dir() -> None:
+    """Destinations must not depend on the process working directory."""
+    with pytest.raises(ValueError, match="absolute"):
+        RetrievalRequest(
+            datetime(2026, 8, 27, tzinfo=timezone.utc),
+            0,
+            ("2t",),
+            Path("raw"),
+        )
+
+
+def test_retrieval_request_rejects_symlinked_target_dir(
+    tmp_path: Path,
+) -> None:
+    """A destination symlink cannot redirect provider output elsewhere."""
+    actual = tmp_path / "actual"
+    actual.mkdir()
+    linked = tmp_path / "linked"
+    try:
+        linked.symlink_to(actual, target_is_directory=True)
+    except OSError:
+        pytest.skip("symlinks are unavailable on this platform")
+
+    with pytest.raises(ValueError, match="symlink"):
+        RetrievalRequest(
+            datetime(2026, 8, 27, tzinfo=timezone.utc),
+            0,
+            ("2t",),
+            linked,
+        )
 
 
 def test_retrieved_artifact_rejects_path_outside_target(tmp_path: Path) -> None:
@@ -149,6 +183,30 @@ def test_retrieved_artifact_rejects_path_outside_target(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="target_dir"):
         RetrievedArtifact.from_path(outside, "ecmwf-ifs", request)
+
+
+def test_retrieved_artifact_rejects_relative_path(tmp_path: Path) -> None:
+    """Provider results must be explicit absolute filesystem paths."""
+    request = RetrievalRequest(
+        datetime(2026, 8, 27, tzinfo=timezone.utc),
+        0,
+        ("2t",),
+        tmp_path,
+    )
+
+    with pytest.raises(ValueError, match="absolute"):
+        RetrievedArtifact.from_path(
+            Path("forecast.grib2"), "ecmwf-ifs", request
+        )
+
+    with pytest.raises(ValueError, match="absolute"):
+        RetrievedArtifact(
+            path=Path("forecast.grib2"),
+            provider="ecmwf-ifs",
+            request=request,
+            sha256="0" * 64,
+            size_bytes=4,
+        )
 
 
 def test_retrieved_artifact_rejects_symlink(tmp_path: Path) -> None:
@@ -171,6 +229,36 @@ def test_retrieved_artifact_rejects_symlink(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="symlink"):
         RetrievedArtifact.from_path(linked, "ecmwf-ifs", request)
+
+
+def test_retrieved_artifact_rejects_intermediate_symlink(
+    tmp_path: Path,
+) -> None:
+    """No parent directory in the provider-returned path may be a symlink."""
+    target = tmp_path / "raw"
+    target.mkdir()
+    actual = target / "actual"
+    actual.mkdir()
+    artifact = actual / "forecast.grib2"
+    artifact.write_bytes(b"GRIB")
+    linked = target / "linked"
+    try:
+        linked.symlink_to(actual, target_is_directory=True)
+    except OSError:
+        pytest.skip("symlinks are unavailable on this platform")
+    request = RetrievalRequest(
+        datetime(2026, 8, 27, tzinfo=timezone.utc),
+        0,
+        ("2t",),
+        target,
+    )
+
+    with pytest.raises(ValueError, match="symlink"):
+        RetrievedArtifact.from_path(
+            linked / artifact.name,
+            "ecmwf-ifs",
+            request,
+        )
 
 
 def test_herbie_client_uses_official_gfs_contract(tmp_path: Path) -> None:
