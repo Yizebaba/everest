@@ -124,4 +124,16 @@ describe("SceneSelectionPanel", () => {
     expect(html).toContain('<button type="button">Camp 2S</button>');
     expect(html).toContain('<button type="button">Summit</button>');
   });
+
+  it("renders a keyboard route button from exact API vertices", () => {
+    const route: [number, number][] = [
+      [27.99, 86.85],
+      [27.98, 86.9],
+    ];
+    const html = renderToStaticMarkup(
+      <SceneSelectionPanel selection={null} records={[]} route={route} />,
+    );
+
+    expect(html).toContain('<button type="button">South Col route</button>');
+  });
 });

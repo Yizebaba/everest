@@ -97,10 +97,18 @@ export default function Page(): React.JSX.Element {
             records={records}
             camps={everestRoute.data?.camps ?? []}
             summit={everestRoute.data?.summit ?? null}
+            route={everestRoute.data?.route ?? []}
             risk={risk.data?.risk ?? null}
             onSelectCamp={(camp) => {
               setSelection({ kind: "camp", camp });
               setProvenance(null);
+            }}
+            onSelectRoute={(route) => {
+              const coordinate = route[0];
+              if (coordinate) {
+                setSelection({ kind: "route", route, coordinate });
+                setProvenance(null);
+              }
             }}
             locale={locale}
           />

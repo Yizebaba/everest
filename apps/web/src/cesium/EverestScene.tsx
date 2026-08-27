@@ -365,9 +365,17 @@ export function EverestScene({
     selections.routes = new Map([["osm-south-col-route", route]]);
     return () => {
       selections.routes = new Map();
+      // Guard before touching viewer internals: on re-render or unmount the
+      // captured viewer may have been replaced or torn down (viewerRef no
+      // longer points at this instance), and isDestroyed() on a destroyed
+      // Viewer can itself throw.
+      if (viewerRef.current !== viewer) {
+        return;
+      }
       const entity = viewer.entities.getById("osm-south-col-route");
-      if (viewerRef.current === viewer && entity)
+      if (entity) {
         viewer.entities.remove(entity);
+      }
     };
   }, [route, webglOk]);
 

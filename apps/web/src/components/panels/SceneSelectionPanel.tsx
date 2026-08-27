@@ -8,6 +8,7 @@ import type {
   EverestCamp,
 } from "@/api/types";
 import type { SceneSelection } from "@/cesium/selection";
+import type { RouteCoordinate } from "@/cesium/selection";
 import { t, type Locale } from "@/i18n/t";
 import {
   formatTemperature,
@@ -21,8 +22,10 @@ interface SceneSelectionPanelProps {
   records: CanonicalWeatherRecord[];
   camps?: EverestCamp[];
   summit?: EverestCamp | null;
+  route?: RouteCoordinate[];
   risk?: BackendRiskAssessment | null;
   onSelectCamp?: (camp: EverestCamp) => void;
+  onSelectRoute?: (route: RouteCoordinate[]) => void;
   locale?: Locale;
 }
 
@@ -85,8 +88,10 @@ export function SceneSelectionPanel({
   records,
   camps = [],
   summit = null,
+  route = [],
   risk = null,
   onSelectCamp,
+  onSelectRoute,
   locale = "en",
 }: SceneSelectionPanelProps): React.JSX.Element {
   const coordinate = selection ? selectedCoordinate(selection) : null;
@@ -116,6 +121,13 @@ export function SceneSelectionPanel({
               </button>
             </li>
           ))}
+          {route.length > 0 && (
+            <li>
+              <button type="button" onClick={() => onSelectRoute?.(route)}>
+                {t("selection.southColRoute", locale)}
+              </button>
+            </li>
+          )}
         </ul>
       </div>
       {selection === null || coordinate === null ? (
