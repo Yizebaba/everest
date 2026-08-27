@@ -56,6 +56,9 @@ const DEFAULT_OPTIONS: NormalizedRegionalWindFieldOptions = {
   particleLifeSeconds: 1.5,
 };
 const STREAM_COLOR = "#38BDF8";
+// Cesium 1.144 requires CircleEmitter radius > 0. Number.EPSILON is a legal
+// public-API point approximation; speed=0 removes its UNIT_Z velocity.
+export const POINT_EMITTER_RADIUS_METERS = Number.EPSILON;
 
 let spriteDataUrl: string | undefined;
 
@@ -106,7 +109,7 @@ export function normalizeRegionalWindFieldOptions(
 export function regionalParticleSystemOptions(seed: Pick<WindSeed, "u" | "v">) {
   return {
     speed: 0,
-    emitterRadius: 0,
+    emitterRadius: POINT_EMITTER_RADIUS_METERS,
     localDrift: { east: seed.u, north: seed.v, up: 0 },
   } as const;
 }

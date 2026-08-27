@@ -1,8 +1,10 @@
+import { CircleEmitter } from "cesium";
 import { describe, expect, it, vi } from "vitest";
 
 import {
   installRegionalWindSystems,
   normalizeRegionalWindFieldOptions,
+  POINT_EMITTER_RADIUS_METERS,
   regionalParticleSystemOptions,
 } from "./RegionalWindField";
 
@@ -42,8 +44,9 @@ describe("regional particle velocity", () => {
   it("uses only the update callback for u/v drift", () => {
     const options = regionalParticleSystemOptions({ u: 5, v: -2 });
     expect(options.speed).toBe(0);
-    expect(options.emitterRadius).toBe(0);
+    expect(options.emitterRadius).toBe(POINT_EMITTER_RADIUS_METERS);
     expect(options.localDrift).toEqual({ east: 5, north: -2, up: 0 });
+    expect(() => new CircleEmitter(options.emitterRadius)).not.toThrow();
   });
 });
 

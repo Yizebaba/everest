@@ -54,6 +54,7 @@ import {
 import {
   createRegionalWindField,
   installRegionalWindSystems,
+  POINT_EMITTER_RADIUS_METERS,
   selectRenderableWindFrame,
 } from "@/cesium/wind";
 import {
@@ -726,7 +727,7 @@ export function EverestScene({
             imageSize: new Cartesian2(4, 4),
             emissionRate: 3,
             bursts: [new ParticleBurst({ time: 0, minimum: 4, maximum: 6 })],
-            emitter: new CircleEmitter(0),
+            emitter: new CircleEmitter(POINT_EMITTER_RADIUS_METERS),
             updateCallback: (particle, dt) => {
               particle.position = Cartesian3.add(
                 particle.position,

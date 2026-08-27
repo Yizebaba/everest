@@ -3,6 +3,7 @@ export { adaptWindFieldFrame, type WindFieldTextureData } from "./data";
 export {
   createRegionalWindField,
   installRegionalWindSystems,
+  POINT_EMITTER_RADIUS_METERS,
 } from "./RegionalWindField";
 export { selectRenderableWindFrame } from "./frame";
 export {
