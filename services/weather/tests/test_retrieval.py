@@ -3,8 +3,10 @@
 # Fakes intentionally expose only the provider methods used by each adapter.
 # pylint: disable=too-few-public-methods,missing-class-docstring
 # pylint: disable=missing-function-docstring,import-outside-toplevel,duplicate-code
+# pylint: disable=protected-access
 
 from datetime import datetime, timezone
+import os
 from pathlib import Path
 
 import pytest
@@ -199,9 +201,33 @@ def test_retrieved_artifact_rejects_relative_path(tmp_path: Path) -> None:
             Path("forecast.grib2"), "ecmwf-ifs", request
         )
 
-    with pytest.raises(ValueError, match="absolute"):
+    with pytest.raises(TypeError):
         RetrievedArtifact(
             path=Path("forecast.grib2"),
+            provider="ecmwf-ifs",
+            request=request,
+            sha256="0" * 64,
+            size_bytes=4,
+        )
+
+
+def test_retrieved_artifact_rejects_direct_unverified_construction(
+    tmp_path: Path,
+) -> None:
+    """Only from_path may create an artifact with integrity metadata."""
+    request = RetrievalRequest(
+        datetime(2026, 8, 27, tzinfo=timezone.utc),
+        0,
+        ("2t",),
+        tmp_path,
+    )
+
+    with pytest.raises(TypeError, match="from_path"):
+        RetrievedArtifact()  # type: ignore[call-arg]
+
+    with pytest.raises(TypeError):
+        RetrievedArtifact(
+            path=tmp_path / "forecast.grib2",
             provider="ecmwf-ifs",
             request=request,
             sha256="0" * 64,
@@ -259,6 +285,54 @@ def test_retrieved_artifact_rejects_intermediate_symlink(
             "ecmwf-ifs",
             request,
         )
+
+
+@pytest.mark.skipif(
+    os.name != "posix"
+    or os.open not in os.supports_dir_fd
+    or not hasattr(os, "O_NOFOLLOW")
+    or not hasattr(os, "O_DIRECTORY"),
+    reason="secure dir-fd traversal is unavailable on this platform",
+)
+def test_retrieved_artifact_rejects_intermediate_symlink_substitution(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A directory swapped before openat cannot redirect the final open."""
+    from services.weather import retrieval
+
+    target = tmp_path / "raw"
+    target.mkdir()
+    intermediate = target / "forecast"
+    intermediate.mkdir()
+    artifact = intermediate / "result.grib2"
+    artifact.write_bytes(b"trusted")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / artifact.name).write_bytes(b"attacker")
+    request = RetrievalRequest(
+        datetime(2026, 8, 27, tzinfo=timezone.utc),
+        0,
+        ("2t",),
+        target,
+    )
+    original_open_at = retrieval._open_at
+    swapped = False
+
+    def substituting_open_at(component: str, flags: int, *, dir_fd: int) -> int:
+        nonlocal swapped
+        if component == intermediate.name and not swapped:
+            swapped = True
+            intermediate.rename(target / "original")
+            intermediate.symlink_to(outside, target_is_directory=True)
+        return original_open_at(component, flags, dir_fd=dir_fd)
+
+    monkeypatch.setattr(retrieval, "_open_at", substituting_open_at)
+
+    with pytest.raises(ValueError, match="symlink|secure"):
+        RetrievedArtifact.from_path(artifact, "ecmwf-ifs", request)
+
+    assert swapped
 
 
 def test_herbie_client_uses_official_gfs_contract(tmp_path: Path) -> None:
