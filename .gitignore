@@ -57,3 +57,6 @@ apps/web/public/cesium/
 
 # Local dev/next logs
 *.log
+
+# Local verification captures (commands/results are reported in QA docs)
+.audit-*.txt
