@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { validateEverestRoute } from "./validate";
+import { validateEverestRoute, validateRisk } from "./validate";
 
 describe("validateEverestRoute", () => {
   it("accepts a valid route payload", () => {
@@ -66,9 +66,7 @@ describe("validateEverestRoute", () => {
       camps: [],
       route: [[95, 86.9]],
     };
-    expect(() => validateEverestRoute(payload)).toThrow(
-      "route vertex invalid",
-    );
+    expect(() => validateEverestRoute(payload)).toThrow("route vertex invalid");
   });
 
   it("rejects a missing source_id", () => {
@@ -127,5 +125,41 @@ describe("validateEverestRoute", () => {
     expect(() => validateEverestRoute(payload)).toThrow(
       "camp coordinate invalid",
     );
+  });
+});
+
+describe("validateRisk", () => {
+  it("accepts the bounded backend risk engine response", () => {
+    const result = validateRisk({
+      risk: {
+        level: "go",
+        confidence: 0.9,
+        valid_time: "2026-08-27T06:00:00Z",
+        profile: "SUMMIT",
+        altitude_metres: 8848,
+        factors: [],
+        inputs: { source: "ecmwf-ifs" },
+        basis: "persisted_canonical_weather",
+      },
+    });
+
+    expect(result.risk.level).toBe("go");
+  });
+
+  it("rejects fabricated risk levels", () => {
+    expect(() =>
+      validateRisk({
+        risk: {
+          level: "safe",
+          confidence: 1,
+          valid_time: null,
+          profile: "SUMMIT",
+          altitude_metres: null,
+          factors: [],
+          inputs: {},
+          basis: "no_persisted_record",
+        },
+      }),
+    ).toThrow("risk level invalid");
   });
 });

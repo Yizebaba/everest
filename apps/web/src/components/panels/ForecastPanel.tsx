@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { ForecastResponse } from "@/api/types";
 import type { FetchState } from "@/state/useApiFetch";
+import { t, type Locale } from "@/i18n/t";
 
 const SOURCE_COLORS: Record<string, string> = {
   "ecmwf-ifs": "#38BDF8",
@@ -18,12 +19,14 @@ export interface ForecastPanelProps {
   state: FetchState<ForecastResponse>;
   activeTime?: string | null;
   onActiveTimeChange?: (time: string | null) => void;
+  locale?: Locale;
 }
 
 export function ForecastPanel({
   state,
   activeTime,
   onActiveTimeChange,
+  locale = "en",
 }: ForecastPanelProps): React.JSX.Element {
   const { status, data, error, refetch } = state;
   const [activeSource, setActiveSource] = useState<string>("all");
@@ -92,28 +95,28 @@ export function ForecastPanel({
 
   if (status === "idle" || status === "loading") {
     return (
-      <section aria-label="Forecast" aria-busy="true">
+      <section aria-label={t("panels.forecast", locale)} aria-busy="true">
         Loading…
       </section>
     );
   }
   if (status === "error") {
     return (
-      <section aria-label="Forecast">
+      <section aria-label={t("panels.forecast", locale)}>
         {error?.message ?? "Request failed"}{" "}
         {error && "correlationId" in error && (
           <span>Correlation ID: {String(error.correlationId)} </span>
         )}
         <button type="button" onClick={refetch}>
-          Retry
+          {t("app.retry", locale)}
         </button>
       </section>
     );
   }
 
   return (
-    <section aria-label="Forecast" className="forecast">
-      <h2>Forecast</h2>
+    <section aria-label={t("panels.forecast", locale)} className="forecast">
+      <h2>{t("panels.forecast", locale)}</h2>
       {(data?.warningCount ?? 0) > 0 && (
         <p role="status">{data?.warningCount} invalid record(s) isolated</p>
       )}
@@ -184,7 +187,7 @@ export function ForecastPanel({
         <span className="forecast__time-value">{activeTime ?? "—"}</span>
       </div>
       {distinctTimes.length === 0 ? (
-        <p>No data for this selection</p>
+        <p>{t("app.noData", locale)}</p>
       ) : (
         <>
           <div

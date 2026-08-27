@@ -5,8 +5,13 @@ import type { ProfileResponse } from "@/api/types";
 import type { ProfileLabel } from "@/api/types";
 import { PROFILE_LABELS } from "@/api/validate";
 import { useApiFetch, type FetchState } from "@/state/useApiFetch";
+import { t, type Locale } from "@/i18n/t";
 
-export function CampLadder(): React.JSX.Element {
+export function CampLadder({
+  locale = "en",
+}: {
+  locale?: Locale;
+}): React.JSX.Element {
   const ebc = useApiFetch(() => getProfile("EBC"));
   const c1 = useApiFetch(() => getProfile("C1"));
   const c2 = useApiFetch(() => getProfile("C2"));
@@ -24,8 +29,8 @@ export function CampLadder(): React.JSX.Element {
   };
 
   return (
-    <section aria-label="Camp altitude ladder" className="ladder">
-      <h2>Altitude ladder</h2>
+    <section aria-label={t("panels.altitudeLadder", locale)} className="ladder">
+      <h2>{t("panels.altitudeLadder", locale)}</h2>
       <ol className="ladder__rungs">
         {PROFILE_LABELS.map((label) => {
           const state = states[label];

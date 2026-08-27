@@ -11,6 +11,7 @@ import type {
 import { SUMMIT_THRESHOLDS, STALE_AFTER_HOURS } from "@/config/summitWindow";
 import { summitBasisRecord } from "@/lib/geo";
 import {
+  formatHumidity,
   formatPrecipitation,
   formatTemperature,
   formatVisibility,
@@ -18,23 +19,57 @@ import {
   formatWindSpeed,
 } from "@/lib/units";
 import { useApiFetch, type FetchState } from "@/state/useApiFetch";
+import { t, type Locale } from "@/i18n/t";
 
 export type SummitScore = "GO" | "CAUTION" | "STOP";
+
+const RANK: Record<SummitScore, number> = { GO: 0, CAUTION: 1, STOP: 2 };
+
+function worse(a: SummitScore, b: SummitScore): SummitScore {
+  return RANK[a] >= RANK[b] ? a : b;
+}
 
 export function scoreSummitRecord(
   record: CanonicalWeatherRecord,
 ): SummitScore | null {
-  if (!isClean(record) || record.wind_speed === null) {
+  if (!isClean(record)) {
     return null;
   }
-  const windSpeed = record.wind_speed;
-  if (windSpeed <= SUMMIT_THRESHOLDS.goMaxWind) {
-    return "GO";
+  const factors: SummitScore[] = [];
+  if (record.wind_speed !== null && record.wind_speed !== undefined) {
+    if (record.wind_speed <= SUMMIT_THRESHOLDS.goMaxWind) {
+      factors.push("GO");
+    } else if (record.wind_speed <= SUMMIT_THRESHOLDS.cautionMaxWind) {
+      factors.push("CAUTION");
+    } else {
+      factors.push("STOP");
+    }
   }
-  if (windSpeed <= SUMMIT_THRESHOLDS.cautionMaxWind) {
-    return "CAUTION";
+  if (
+    record.precipitation !== null &&
+    record.precipitation !== undefined &&
+    record.precipitation > SUMMIT_THRESHOLDS.precipitationCaution
+  ) {
+    factors.push("CAUTION");
   }
-  return "STOP";
+  if (
+    record.visibility !== null &&
+    record.visibility !== undefined &&
+    record.visibility < SUMMIT_THRESHOLDS.visibilityCaution
+  ) {
+    factors.push("CAUTION");
+  }
+  if (
+    record.temperature !== null &&
+    record.temperature !== undefined &&
+    record.temperature < SUMMIT_THRESHOLDS.temperatureCaution
+  ) {
+    factors.push("CAUTION");
+  }
+  if (factors.length === 0) {
+    return null;
+  }
+  return factors.reduce(worse);
 }
 
 function isClean(record: CanonicalWeatherRecord): boolean {
@@ -53,11 +88,13 @@ function isClean(record: CanonicalWeatherRecord): boolean {
 export interface SummitWindowPanelProps {
   current: FetchState<CurrentResponse>;
   forecast: FetchState<ForecastResponse>;
+  locale?: Locale;
 }
 
 export function SummitWindowPanel({
   current,
   forecast,
+  locale = "en",
 }: SummitWindowPanelProps): React.JSX.Element {
   const profile = useApiFetch(() => getProfile("SUMMIT"));
 
@@ -90,11 +127,9 @@ export function SummitWindowPanel({
         continue;
       }
       cleanSources += 1;
-      if (record.wind_speed !== null && record.wind_speed !== undefined) {
-        const score = scoreSummitRecord(record);
-        if (score) {
-          counts[score] += 1;
-        }
+      const score = scoreSummitRecord(record);
+      if (score) {
+        counts[score] += 1;
       }
       const hoursOld =
         (Date.now() - new Date(record.timestamp).getTime()) / 3_600_000;
@@ -111,10 +146,10 @@ export function SummitWindowPanel({
     basisTime === null ? null : (Date.now() - basisTime) / 3_600_000;
 
   return (
-    <section aria-label="Summit Window" className="summit-window">
-      <h2>Summit Window</h2>
+    <section aria-label={t("summit.window", locale)} className="summit-window">
+      <h2>{t("summit.window", locale)}</h2>
       {basis === null ? (
-        <p>No data for this selection</p>
+        <p>{t("app.noData", locale)}</p>
       ) : (
         <>
           {scoreSummitRecord(basis) ? (
@@ -153,6 +188,10 @@ export function SummitWindowPanel({
               <dt>Precipitation</dt>
               <dd>{formatPrecipitation(basis.precipitation ?? null)}</dd>
             </div>
+            <div>
+              <dt>Humidity</dt>
+              <dd>{formatHumidity(basis.relative_humidity ?? null)}</dd>
+            </div>
           </dl>
           <p className="summit-window__basis">
             basis: {basis.source} · {basis.model ?? "–"} · {basis.timestamp} ·{" "}
@@ -175,8 +214,9 @@ export function SummitWindowPanel({
             </p>
           )}
           <p className="summit-window__note">
-            non-authoritative presentation layer · thresholds wind ≤ 15 / ≤ 25
-            m/s
+            non-authoritative presentation layer · wind ≤ 15 / ≤ 25 m/s · precip
+            &gt; 0.1 mm · vis &lt; 200 m · temp &lt; −25 °C → CAUTION; wind &gt;
+            25 m/s → STOP
           </p>
         </>
       )}

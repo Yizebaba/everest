@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 
 import type { CanonicalWeatherRecord } from "@/api/types";
+import { t, type Locale } from "@/i18n/t";
 
 type Variable = "temperature" | "wind_speed" | "precipitation" | "visibility";
 
@@ -33,12 +34,14 @@ export interface ModelDisagreementProps {
   records: CanonicalWeatherRecord[];
   loading: boolean;
   activeTime: string | null;
+  locale?: Locale;
 }
 
 export function ModelDisagreement({
   records,
   loading,
   activeTime,
+  locale = "en",
 }: ModelDisagreementProps): React.JSX.Element {
   const [variable, setVariable] = useState<Variable>("wind_speed");
 
@@ -68,8 +71,11 @@ export function ModelDisagreement({
   }, [atTime, variable]);
 
   return (
-    <section aria-label="Model disagreement" className="disagreement">
-      <h2>Model disagreement</h2>
+    <section
+      aria-label={t("panels.modelDisagreement", locale)}
+      className="disagreement"
+    >
+      <h2>{t("panels.modelDisagreement", locale)}</h2>
       <div role="group" aria-label="Variable">
         {VARIABLES.map((v) => (
           <button
@@ -83,7 +89,7 @@ export function ModelDisagreement({
         ))}
       </div>
       {loading && <p>…</p>}
-      {!loading && selectedTime === null && <p>No data for this selection</p>}
+      {!loading && selectedTime === null && <p>{t("app.noData", locale)}</p>}
       {stats && (
         <dl>
           <div>

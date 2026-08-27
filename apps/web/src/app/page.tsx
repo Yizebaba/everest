@@ -3,7 +3,15 @@
 import dynamic from "next/dynamic";
 import { useState } from "react";
 
-import { getCurrent, getEverestRoute, getForecast } from "@/api/client";
+import {
+  getCurrent,
+  getEverestRoute,
+  getForecast,
+  getSummitWindowRisk,
+  getTerrainTile,
+} from "@/api/client";
+import { DomainStatusBar } from "@/components/layout/DomainStatusBar";
+import { LanguageSwitcher } from "@/components/layout/LanguageSwitcher";
 import { CampLadder } from "@/components/panels/CampLadder";
 import { CurrentWeatherPanel } from "@/components/panels/CurrentWeatherPanel";
 import { ForecastPanel } from "@/components/panels/ForecastPanel";
@@ -13,6 +21,8 @@ import { SourcesPanel } from "@/components/panels/SourcesPanel";
 import { SummitWindowPanel } from "@/components/panels/SummitWindowPanel";
 import { VerticalProfilePanel } from "@/components/panels/VerticalProfilePanel";
 import type { CanonicalWeatherRecord } from "@/api/types";
+import { t, type Locale } from "@/i18n/t";
+import { AOI_CENTER } from "@/lib/geo";
 import { selectMapRecords } from "@/lib/weatherFlow";
 import { useApiFetch } from "@/state/useApiFetch";
 
@@ -26,10 +36,15 @@ export default function Page(): React.JSX.Element {
     null,
   );
   const [activeTime, setActiveTime] = useState<string | null>(null);
+  const [locale, setLocale] = useState<Locale>("en");
 
   const current = useApiFetch(() => getCurrent());
   const forecast = useApiFetch(() => getForecast());
+  const terrain = useApiFetch(() =>
+    getTerrainTile(AOI_CENTER.latitude, AOI_CENTER.longitude),
+  );
   const everestRoute = useApiFetch(() => getEverestRoute());
+  const risk = useApiFetch(() => getSummitWindowRisk());
 
   const records = selectMapRecords(
     current.data?.records ?? [],
@@ -37,74 +52,111 @@ export default function Page(): React.JSX.Element {
     activeTime,
   );
 
+  const terrainStatus = terrain.data?.tile ? "ok" : "empty";
+  const weatherStatus =
+    (current.data?.records ?? []).length > 0 ? "ok" : "empty";
+  const routeStatus =
+    (everestRoute.data?.route.length ?? 0) > 0 ? "ok" : "empty";
+  const riskStatus =
+    risk.data?.risk.basis === "persisted_canonical_weather" ? "ok" : "empty";
+
   return (
     <main className="dashboard">
-      <div className="dashboard__scene">
-        <EverestScene
-          records={records}
-          camps={everestRoute.data?.camps ?? []}
-          route={everestRoute.data?.route ?? []}
-          summit={everestRoute.data?.summit ?? null}
-          onSelectRecord={setProvenance}
+      <header className="dashboard__header">
+        <h1>{t("app.title", locale)}</h1>
+        <DomainStatusBar
+          locale={locale}
+          terrainStatus={terrainStatus}
+          weatherStatus={weatherStatus}
+          routeStatus={routeStatus}
+          riskStatus={riskStatus}
         />
+        <LanguageSwitcher locale={locale} onLocaleChange={setLocale} />
+      </header>
+      <div className="dashboard__body">
+        <div className="dashboard__scene">
+          <EverestScene
+            records={records}
+            camps={everestRoute.data?.camps ?? []}
+            route={everestRoute.data?.route ?? []}
+            summit={everestRoute.data?.summit ?? null}
+            locale={locale}
+            onSelectRecord={setProvenance}
+          />
+        </div>
+        <aside
+          className="dashboard__rail"
+          aria-label={t("panels.dataPanels", locale)}
+        >
+          <SummitWindowPanel
+            current={current}
+            forecast={forecast}
+            locale={locale}
+          />
+          <CurrentWeatherPanel state={current} locale={locale} />
+          <ForecastPanel
+            state={forecast}
+            activeTime={activeTime}
+            onActiveTimeChange={setActiveTime}
+            locale={locale}
+          />
+          <VerticalProfilePanel
+            records={forecast.data?.records ?? []}
+            activeTime={activeTime}
+            locale={locale}
+          />
+          <CampLadder locale={locale} />
+          <ModelDisagreement
+            records={forecast.data?.records ?? []}
+            loading={forecast.status === "loading"}
+            activeTime={activeTime}
+            locale={locale}
+          />
+          <SourcesPanel locale={locale} />
+        </aside>
       </div>
-      <aside className="dashboard__rail" aria-label="Data panels">
-        <SummitWindowPanel current={current} forecast={forecast} />
-        <CurrentWeatherPanel state={current} />
-        <ForecastPanel
-          state={forecast}
-          onActiveTimeChange={setActiveTime}
-          activeTime={activeTime}
-        />
-        <VerticalProfilePanel
-          records={forecast.data?.records ?? []}
-          activeTime={activeTime}
-        />
-        <CampLadder />
-        <ModelDisagreement
-          records={forecast.data?.records ?? []}
-          loading={forecast.status === "loading"}
-          activeTime={activeTime}
-        />
-        <SourcesPanel />
-      </aside>
       <ProvenancePopover
         record={provenance}
         onClose={() => setProvenance(null)}
       />
       <style jsx>{`
         .dashboard {
-          display: grid;
-          grid-template-columns: 1fr 400px;
-          grid-template-rows: 100vh;
           height: 100vh;
-          overflow: hidden;
+          display: flex;
+          flex-direction: column;
           background: #0b0e14;
           color: #e6eaf2;
           font-family: Inter, system-ui, sans-serif;
         }
+        .dashboard__header {
+          display: flex;
+          align-items: center;
+          gap: 16px;
+          padding: 8px 16px;
+          border-bottom: 1px solid #232c40;
+        }
+        .dashboard__header h1 {
+          font-size: 16px;
+          margin: 0;
+          white-space: nowrap;
+        }
+        .dashboard__body {
+          display: grid;
+          grid-template-columns: 1fr 400px;
+          flex: 1;
+          min-height: 0;
+        }
         .dashboard__scene {
           position: relative;
           min-width: 0;
-          min-height: 0;
-          overflow: hidden;
         }
         .dashboard__rail {
           border-left: 1px solid #232c40;
           padding: 16px;
           overflow-y: auto;
-          overflow-x: hidden;
           display: flex;
           flex-direction: column;
           gap: 16px;
-          background: #0d1117;
-          min-height: 0;
-        }
-        .dashboard__rail > :global(section),
-        .dashboard__rail > :global(div) {
-          background: #141a24;
-          border: 1px solid #232c40;
-          border-radius: 8px;
         }
       `}</style>
     </main>

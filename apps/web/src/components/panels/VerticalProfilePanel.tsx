@@ -4,6 +4,7 @@ import { useMemo } from "react";
 
 import type { CanonicalWeatherRecord } from "@/api/types";
 import { compassPoint } from "@/lib/geo";
+import { t, type Locale } from "@/i18n/t";
 
 export interface VerticalProfilePanelProps {
   records: CanonicalWeatherRecord[];
@@ -11,6 +12,7 @@ export interface VerticalProfilePanelProps {
   // stacked every lead's levels into one list, so a 13-lead cycle produced ~150
   // unordered rows and no readable vertical column.
   activeTime?: string | null;
+  locale?: Locale;
 }
 
 /** Round a value to one decimal for compact display. */
@@ -89,6 +91,7 @@ export function profileRows(
 export function VerticalProfilePanel({
   records,
   activeTime,
+  locale = "en",
 }: VerticalProfilePanelProps): React.JSX.Element {
   const rows = useMemo(
     () => profileRows(records, activeTime),
@@ -97,8 +100,13 @@ export function VerticalProfilePanel({
 
   if (rows.length === 0) {
     return (
-      <section className="profile-panel" aria-label="Vertical profile">
-        <h2 className="profile-panel__title">Vertical profile</h2>
+      <section
+        className="profile-panel"
+        aria-label={t("panels.verticalProfile", locale)}
+      >
+        <h2 className="profile-panel__title">
+          {t("panels.verticalProfile", locale)}
+        </h2>
         <p className="profile-panel__empty">
           No pressure-level data yet. Pressure levels show wind/temperature at
           altitude (300 hPa ≈ summit).
@@ -134,9 +142,12 @@ export function VerticalProfilePanel({
   const column = levels[0]?.timestamp ?? null;
 
   return (
-    <section className="profile-panel" aria-label="Vertical profile">
+    <section
+      className="profile-panel"
+      aria-label={t("panels.verticalProfile", locale)}
+    >
       <h2 className="profile-panel__title">
-        Vertical profile
+        {t("panels.verticalProfile", locale)}
         {column ? (
           <span className="profile-panel__column"> · {column}</span>
         ) : null}

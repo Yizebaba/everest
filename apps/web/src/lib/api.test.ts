@@ -8,6 +8,7 @@ import {
   validateSources,
 } from "../api/validate";
 import {
+  formatHumidity,
   formatTemperature,
   formatVisibility,
   formatWindDirection,
@@ -189,5 +190,10 @@ describe("unit formatting", () => {
 
   it("formats wind direction in degrees", () => {
     expect(formatWindDirection(259)).toBe("259°");
+  });
+
+  it("formats humidity as a percent", () => {
+    expect(formatHumidity(47.6)).toBe("48 %");
+    expect(formatHumidity(null)).toBe("unavailable");
   });
 });

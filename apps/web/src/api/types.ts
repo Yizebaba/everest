@@ -131,3 +131,18 @@ export interface EverestRouteResponse {
   // unmarked in that case rather than drawing a hard-coded 8848 m point.
   summit: EverestCamp | null;
 }
+
+export interface BackendRiskAssessment {
+  level: "go" | "caution" | "block" | "unknown";
+  confidence: number;
+  valid_time: string | null;
+  profile: string;
+  altitude_metres: number | null;
+  factors: unknown[];
+  inputs: Record<string, unknown>;
+  basis: string;
+}
+
+export interface RiskResponse {
+  risk: BackendRiskAssessment;
+}

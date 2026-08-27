@@ -7,6 +7,7 @@ import type {
   ObservationsResponse,
   ProfileLabel,
   ProfileResponse,
+  RiskResponse,
   SatelliteResponse,
   SourceHealthStatus,
   SourceLifecycleStatus,
@@ -14,6 +15,8 @@ import type {
   SourcesResponse,
   TerrainTileResponse,
 } from "./types";
+
+const RISK_LEVELS = new Set(["go", "caution", "block", "unknown"]);
 
 const RECORD_TYPES = new Set([
   "forecast",
@@ -219,6 +222,41 @@ export function validateCurrent(payload: unknown): CurrentResponse {
 
 export function validateForecast(payload: unknown): ForecastResponse {
   return validateRecords(payload);
+}
+
+export function validateRisk(payload: unknown): RiskResponse {
+  const body = payload as { risk?: unknown };
+  if (typeof body.risk !== "object" || body.risk === null) {
+    throw new Error("response body missing risk object");
+  }
+  const risk = body.risk as Record<string, unknown>;
+  if (!RISK_LEVELS.has(String(risk.level)))
+    throw new Error("risk level invalid");
+  if (
+    !isFiniteNumber(risk.confidence) ||
+    risk.confidence < 0 ||
+    risk.confidence > 1
+  ) {
+    throw new Error("risk confidence invalid");
+  }
+  if (risk.valid_time !== null && !isUtcZ(risk.valid_time)) {
+    throw new Error("risk valid_time invalid");
+  }
+  if (typeof risk.profile !== "string" || typeof risk.basis !== "string") {
+    throw new Error("risk identity invalid");
+  }
+  if (risk.altitude_metres !== null && !isFiniteNumber(risk.altitude_metres)) {
+    throw new Error("risk altitude invalid");
+  }
+  if (!Array.isArray(risk.factors)) throw new Error("risk factors invalid");
+  if (
+    typeof risk.inputs !== "object" ||
+    risk.inputs === null ||
+    Array.isArray(risk.inputs)
+  ) {
+    throw new Error("risk inputs invalid");
+  }
+  return { risk: risk as unknown as RiskResponse["risk"] };
 }
 
 export function validateProfile(payload: unknown): ProfileResponse {

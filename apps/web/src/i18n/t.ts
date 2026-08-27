@@ -1,22 +1,30 @@
-import { en } from "./messages";
+import type { Locale } from "./locale";
+import { CATALOGS, type LocaleCatalog } from "./messages";
 
-export type MessageKey = string;
+export type { Locale } from "./locale";
 
-function lookup(key: MessageKey): string {
-  const parts = key.split(".");
-  let value: unknown = en;
-  for (const part of parts) {
-    if (typeof value !== "object" || value === null || !(part in value)) {
-      throw new Error(`missing i18n key: ${key}`);
-    }
-    value = (value as Record<string, unknown>)[part];
-  }
-  if (typeof value !== "string") {
-    throw new Error(`i18n key is not a string: ${key}`);
+type Section = keyof LocaleCatalog;
+export type MessageKey = {
+  [S in Section]: `${S & string}.${keyof LocaleCatalog[S] & string}`;
+}[Section];
+
+export function t(key: MessageKey, locale: Locale = "en"): string {
+  const [section, item] = key.split(".") as [Section, string];
+  const group = CATALOGS[locale][section] as Record<string, string>;
+  const value = group[item];
+  if (value === undefined) {
+    throw new Error(`missing i18n key: ${key} (${locale})`);
   }
   return value;
 }
 
-export function t(key: MessageKey): string {
-  return lookup(key);
+export function catalogs(): typeof CATALOGS {
+  return CATALOGS;
+}
+
+export function applyDocumentLocale(
+  root: Pick<HTMLElement, "lang">,
+  locale: Locale,
+): void {
+  root.lang = locale;
 }

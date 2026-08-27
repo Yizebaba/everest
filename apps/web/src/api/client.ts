@@ -7,6 +7,7 @@ import type {
   ObservationsResponse,
   ProfileLabel,
   ProfileResponse,
+  RiskResponse,
   SatelliteResponse,
   SourcesResponse,
   TerrainTileResponse,
@@ -18,6 +19,7 @@ import {
   validateForecast,
   validateObservations,
   validateProfile,
+  validateRisk,
   validateSatellite,
   validateSources,
   validateTerrainTile,
@@ -191,4 +193,8 @@ export function getSatellite(band?: number): Promise<SatelliteResponse> {
 
 export function getEverestRoute(): Promise<EverestRouteResponse> {
   return request("/api/everest/route", {}, validateEverestRoute);
+}
+
+export function getSummitWindowRisk(): Promise<RiskResponse> {
+  return request("/api/risk/summit-window", {}, validateRisk);
 }

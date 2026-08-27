@@ -23,3 +23,7 @@ export function formatVisibility(meters: number | null): string {
 export function formatAltitude(meters: number | null): string {
   return meters === null ? "unavailable" : `${Math.round(meters)}${NBSP}m`;
 }
+
+export function formatHumidity(percent: number | null): string {
+  return percent === null ? "unavailable" : `${percent.toFixed(0)}${NBSP}%`;
+}

@@ -18,6 +18,7 @@ import {
   Color,
   defined,
   Entity,
+  GeographicTilingScheme,
   HeadingPitchRange,
   HeightReference,
   ImageryLayer,
@@ -34,16 +35,22 @@ import {
   ScreenSpaceEventType,
   SingleTileImageryProvider,
   Terrain,
+  TileMapServiceImageryProvider,
   Transforms,
-  UrlTemplateImageryProvider,
   Viewer,
 } from "cesium";
 import "cesium/Build/Cesium/Widgets/widgets.css";
 
 import type { CanonicalWeatherRecord } from "@/api/types";
 import type { EverestCamp } from "@/api/types";
+import { t, type Locale } from "@/i18n/t";
+import {
+  sceneSelectionFromEntityId,
+  type SceneSelection,
+} from "@/cesium/selection";
 import {
   AOI_CENTER,
+  compassPoint,
   metersToDegrees,
   oxygenFractionAtAltitude,
   slopeDegrees,
@@ -53,7 +60,8 @@ import {
 // Optional Cesium ion token (gitignored via .env.local). When present, the
 // scene enables Cesium World Terrain (real global terrain) and can load
 // ion-hosted 3D Tiles. When absent, the scene renders on the WGS84 ellipsoid
-// with OSM imagery only — no network calls to ion are made.
+// with the local NaturalEarthII TMS so the globe is not blank if OSM is
+// blocked — no network calls to ion are made.
 const CESIUM_ION_TOKEN = process.env.NEXT_PUBLIC_CESIUM_ION_TOKEN?.trim() ?? "";
 if (typeof window !== "undefined" && CESIUM_ION_TOKEN) {
   Ion.defaultAccessToken = CESIUM_ION_TOKEN;
@@ -67,6 +75,8 @@ export interface EverestSceneProps {
   // summit marker instead of placing one at an assumed height.
   summit?: EverestCamp | null;
   onSelectRecord?: (record: CanonicalWeatherRecord | null) => void;
+  onSelect?: (selection: SceneSelection | null) => void;
+  locale?: Locale;
 }
 
 const SOURCE_COLORS: Record<string, string> = {
@@ -118,6 +128,8 @@ export function EverestScene({
   route = [],
   summit = null,
   onSelectRecord,
+  onSelect,
+  locale = "en",
 }: EverestSceneProps): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewerRef = useRef<Viewer | null>(null);
@@ -125,6 +137,8 @@ export function EverestScene({
   const satelliteLayerRef = useRef<ImageryLayer | null>(null);
   const onSelectRef = useRef(onSelectRecord);
   onSelectRef.current = onSelectRecord;
+  const onSceneSelectRef = useRef(onSelect);
+  onSceneSelectRef.current = onSelect;
 
   const [showSatellite, setShowSatellite] = useState(false);
   const [pickInfo, setPickInfo] = useState<string | null>(null);
@@ -145,10 +159,9 @@ export function EverestScene({
     if (!container) {
       return undefined;
     }
+    const recordEntities = entityByRecord.current;
     let viewer: Viewer | undefined;
     try {
-      // OSM standard raster tiles (interactive viewport-only use, per the OSMF
-      // Tile Usage Policy). Attribution is shown in the scene footer.
       const options: ConstructorParameters<typeof Viewer>[1] = {
         baseLayer: false,
         animation: false,
@@ -193,13 +206,31 @@ export function EverestScene({
         // EV-VIS-004 / docs/design for the base-map rationale.
         viewer.imageryLayers.add(ImageryLayer.fromWorldImagery({}));
       } else {
-        // OSM standard raster tiles (interactive viewport-only use, per the OSMF
-        // Tile Usage Policy). Attribution is shown in the scene footer.
-        const baseLayer = new UrlTemplateImageryProvider({
-          url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-          credit: "© OpenStreetMap contributors",
-        });
-        viewer.imageryLayers.addImageryProvider(baseLayer);
+        // Local NaturalEarthII TMS shipped under /public/cesium. Cesium 1.130
+        // requires fromUrl (the constructor is documented as do-not-call and
+        // skips tilemapresource.xml, so it would assume WebMercator on an
+        // EPSG:4326 jpg set and paint a blank globe). OSM is optional and
+        // often blocked; without this fallback the ellipsoid is blank.
+        void (async () => {
+          try {
+            const tms = await TileMapServiceImageryProvider.fromUrl(
+              "/cesium/Assets/Textures/NaturalEarthII/",
+              {
+                fileExtension: "jpg",
+                maximumLevel: 2,
+                tilingScheme: new GeographicTilingScheme(),
+                credit: "Natural Earth II",
+              },
+            );
+            if (viewer.isDestroyed()) {
+              return;
+            }
+            viewer.imageryLayers.addImageryProvider(tms);
+            viewer.scene.requestRender();
+          } catch (error) {
+            console.error("NaturalEarthII TMS failed:", error);
+          }
+        })();
       }
       viewer.scene.camera.setView({
         // Initial overview; the lookAt below frames the summit at low angle.
@@ -210,23 +241,17 @@ export function EverestScene({
         ),
         orientation: { heading: 0, pitch: -Math.PI / 4, roll: 0 },
       });
-      if (CESIUM_ION_TOKEN) {
-        // Frame the Everest massif from the south at a shallow angle so the
-        // World Terrain 3D relief (ridge shadows) is immediately visible.
-        viewer.scene.camera.lookAt(
-          Cartesian3.fromDegrees(
-            AOI_CENTER.longitude,
-            AOI_CENTER.latitude,
-            7000,
-          ),
-          new HeadingPitchRange(0, -Math.PI / 8, 25000),
-        );
-        // lookAt leaves the camera locked to the target's reference frame, which
-        // keeps every later pan and zoom orbiting that one point. Resetting the
-        // transform keeps the framing just computed but hands normal navigation
-        // back to the user.
-        viewer.scene.camera.lookAtTransform(Matrix4.IDENTITY);
-      }
+      // Frame the Everest massif from the south at a shallow angle. Applied
+      // even without ion so the ellipsoid view is not a high nadir overview.
+      viewer.scene.camera.lookAt(
+        Cartesian3.fromDegrees(AOI_CENTER.longitude, AOI_CENTER.latitude, 7000),
+        new HeadingPitchRange(0, -Math.PI / 8, 25000),
+      );
+      // lookAt leaves the camera locked to the target's reference frame, which
+      // keeps every later pan and zoom orbiting that one point. Resetting the
+      // transform keeps the framing just computed but hands normal navigation
+      // back to the user.
+      viewer.scene.camera.lookAtTransform(Matrix4.IDENTITY);
     } catch (error) {
       console.error("Cesium viewer init failed:", error);
       return undefined;
@@ -270,19 +295,24 @@ export function EverestScene({
     })();
 
     return () => {
-      viewer?.destroy();
+      recordEntities.clear();
+      satelliteLayerRef.current = null;
       viewerRef.current = null;
+      viewer?.destroy();
     };
   }, [webglOk]);
 
   useEffect(() => {
     const viewer = viewerRef.current;
-    if (!viewer || route.length < 2) {
+    if (!viewer) {
       return;
     }
     const existing = viewer.entities.getById("osm-south-col-route");
     if (existing) {
       viewer.entities.remove(existing);
+    }
+    if (route.length < 2) {
+      return;
     }
     const positions = route.map(([latitude, longitude]) =>
       Cartesian3.fromDegrees(longitude, latitude, 0),
@@ -298,17 +328,23 @@ export function EverestScene({
         }),
       }),
     );
+    return () => {
+      const entity = viewer.entities.getById("osm-south-col-route");
+      if (viewerRef.current === viewer && entity)
+        viewer.entities.remove(entity);
+    };
   }, [route, webglOk]);
 
   useEffect(() => {
     const viewer = viewerRef.current;
-    if (!viewer || route.length < 2) {
+    if (!viewer) {
       return;
     }
     const existing = viewer.entities.getById("route-elevation-markers");
     if (existing) {
-      viewer.entities.remove(existing);
+      removeEntityTree(viewer, existing);
     }
+    if (route.length < 2) return;
     // Sample the route at regular stride and label the real terrain height.
     // The stride keeps the number of markers bounded regardless of route
     // vertex count. Height is the Cesium World Terrain elevation at that point.
@@ -323,6 +359,7 @@ export function EverestScene({
       sampled.push(last);
     }
     const markers = new Entity({ id: "route-elevation-markers" });
+    viewer.entities.add(markers);
     void (async () => {
       try {
         const terrainProvider = viewer.terrainProvider;
@@ -337,7 +374,10 @@ export function EverestScene({
           terrainProvider,
           cartographics,
         );
-        if (viewerRef.current !== viewer) {
+        if (
+          viewerRef.current !== viewer ||
+          !viewer.entities.contains(markers)
+        ) {
           return;
         }
         for (let i = 0; i < results.length; i += 1) {
@@ -371,7 +411,10 @@ export function EverestScene({
         }
       } catch {
         // Terrain sampling is best-effort; fall back to silent point markers.
-        if (viewerRef.current !== viewer) {
+        if (
+          viewerRef.current !== viewer ||
+          !viewer.entities.contains(markers)
+        ) {
           return;
         }
         for (const [latitude, longitude] of sampled) {
@@ -390,7 +433,7 @@ export function EverestScene({
     })();
     return () => {
       if (viewerRef.current === viewer) {
-        viewer.entities.remove(markers);
+        removeEntityTree(viewer, markers);
       }
     };
   }, [route, webglOk]);
@@ -404,7 +447,7 @@ export function EverestScene({
     // array changes so the scene stays consistent with the persisted snapshot.
     const existing = viewer.entities.getById("osm-camps");
     if (existing) {
-      viewer.entities.remove(existing);
+      removeEntityTree(viewer, existing);
     }
     if (camps.length === 0 && !summit) {
       return;
@@ -412,6 +455,7 @@ export function EverestScene({
     const campGroup = new Entity({
       id: "osm-camps",
     });
+    viewer.entities.add(campGroup);
     const marked: EverestCamp[] = summit ? [...camps, summit] : camps;
     for (const camp of marked) {
       const isSummit = summit !== null && camp === summit;
@@ -434,8 +478,19 @@ export function EverestScene({
         if (weather.temperature !== null && weather.temperature !== undefined) {
           lines.push(`${weather.temperature.toFixed(1)}°C`);
         }
+        if (
+          weather.relative_humidity !== null &&
+          weather.relative_humidity !== undefined
+        ) {
+          lines.push(`rh ${weather.relative_humidity.toFixed(0)}%`);
+        }
         if (weather.wind_speed !== null && weather.wind_speed !== undefined) {
-          lines.push(`w ${weather.wind_speed.toFixed(1)} m/s`);
+          const dir =
+            weather.wind_direction !== null &&
+            weather.wind_direction !== undefined
+              ? ` ${compassPoint(weather.wind_direction)}`
+              : "";
+          lines.push(`w ${weather.wind_speed.toFixed(1)} m/s${dir}`);
         }
         if (weather.visibility !== null && weather.visibility !== undefined) {
           lines.push(`vis ${Math.round(weather.visibility)} m`);
@@ -484,7 +539,7 @@ export function EverestScene({
     }
     return () => {
       if (viewerRef.current === viewer) {
-        viewer.entities.remove(campGroup);
+        removeEntityTree(viewer, campGroup);
       }
     };
   }, [camps, records, summit, webglOk]);
@@ -511,16 +566,29 @@ export function EverestScene({
     });
     for (const record of records) {
       const key = recordKey(record);
-      if (entityByRecord.current.has(key)) {
-        continue;
+      const previous = entityByRecord.current.get(key);
+      if (previous) {
+        viewer.entities.remove(previous);
+        const previousWind = viewer.entities.getById(`${key}-wind`);
+        if (previousWind) viewer.entities.remove(previousWind);
       }
       const sourceColor = SOURCE_COLORS[record.source] ?? "#9AA5B8";
       const labelLines: string[] = [];
       if (record.temperature !== null && record.temperature !== undefined) {
         labelLines.push(`${record.temperature.toFixed(1)}°C`);
       }
+      if (
+        record.relative_humidity !== null &&
+        record.relative_humidity !== undefined
+      ) {
+        labelLines.push(`rh ${record.relative_humidity.toFixed(0)}%`);
+      }
       if (record.wind_speed !== null && record.wind_speed !== undefined) {
-        labelLines.push(`${record.wind_speed.toFixed(1)} m/s`);
+        const dir =
+          record.wind_direction !== null && record.wind_direction !== undefined
+            ? ` ${compassPoint(record.wind_direction)}`
+            : "";
+        labelLines.push(`${record.wind_speed.toFixed(1)} m/s${dir}`);
       }
       if (record.altitude > 0) {
         labelLines.push(
@@ -533,11 +601,15 @@ export function EverestScene({
         record.temperature !== null && record.temperature !== undefined
           ? `temp ${record.temperature.toFixed(1)} °C`
           : null,
+        record.relative_humidity !== null &&
+        record.relative_humidity !== undefined
+          ? `rh ${record.relative_humidity.toFixed(0)}%`
+          : null,
         record.wind_speed !== null && record.wind_speed !== undefined
           ? `wind ${record.wind_speed.toFixed(1)} m/s`
           : null,
         record.wind_direction !== null && record.wind_direction !== undefined
-          ? `dir ${record.wind_direction.toFixed(0)}°`
+          ? `dir ${record.wind_direction.toFixed(0)}° ${compassPoint(record.wind_direction)}`
           : null,
       ]
         .filter(Boolean)
@@ -757,10 +829,20 @@ export function EverestScene({
     handler.setInputAction((movement: { position: Cartesian2 }) => {
       const picked = viewer.scene.pick(movement.position);
       if (!defined(picked) || !picked.id) {
+        onSceneSelectRef.current?.(null);
         onSelectRef.current?.(null);
         return;
       }
-      const record = records.find((r) => recordKey(r) === picked.id.id);
+      const entityId = String(picked.id.id);
+      const selection = sceneSelectionFromEntityId(
+        entityId,
+        new Set(entityByRecord.current.keys()),
+      );
+      onSceneSelectRef.current?.(selection);
+      const record =
+        selection?.kind === "weather"
+          ? records.find((r) => recordKey(r) === selection.recordKey)
+          : undefined;
       onSelectRef.current?.(record ?? null);
     }, ScreenSpaceEventType.LEFT_CLICK);
 
@@ -790,11 +872,11 @@ export function EverestScene({
       const lonDeg = CesiumMath.toDegrees(carto.longitude);
       const latDeg = CesiumMath.toDegrees(carto.latitude);
       const center = new Cartographic(carto.longitude, carto.latitude);
-      const height = viewer.scene.sampleHeight(center);
-      if (height === undefined) {
-        setPickInfo(null);
-        return;
-      }
+      const sampled = viewer.scene.sampleHeight(center);
+      // On the ellipsoid (no ion World Terrain) sampleHeight is undefined.
+      // globe.pick still returns a cartesian; carto.height is sea-level
+      // ellipsoid height and is enough to report altitude.
+      const height = sampled === undefined ? carto.height : sampled;
       // Slope: sample two orthogonal neighbours RUN_METERS away (east and
       // north) and take the steeper gradient, keeping the per-hover raycast
       // count low. A degree of longitude is only cos(latitude) as long as a
@@ -826,9 +908,29 @@ export function EverestScene({
       // measurement rather than as missing terrain detail.
       const slopeText =
         slopeDeg === null ? "slope —" : `slope ${slopeDeg.toFixed(1)}°`;
-      setPickInfo(
-        `alt ${Math.max(height, 0).toFixed(0)} m · ${slopeText} · ${latDeg.toFixed(4)}°, ${lonDeg.toFixed(4)}°`,
-      );
+      const weather = nearestWeatherRecord(records, latDeg, lonDeg);
+      const bits = [`alt ${Math.max(height, 0).toFixed(0)} m`, slopeText];
+      if (weather) {
+        if (weather.temperature !== null && weather.temperature !== undefined) {
+          bits.push(`${weather.temperature.toFixed(1)}°C`);
+        }
+        if (
+          weather.relative_humidity !== null &&
+          weather.relative_humidity !== undefined
+        ) {
+          bits.push(`rh ${weather.relative_humidity.toFixed(0)}%`);
+        }
+        if (weather.wind_speed !== null && weather.wind_speed !== undefined) {
+          const dir =
+            weather.wind_direction !== null &&
+            weather.wind_direction !== undefined
+              ? ` ${compassPoint(weather.wind_direction)}`
+              : "";
+          bits.push(`${weather.wind_speed.toFixed(1)} m/s${dir}`);
+        }
+      }
+      bits.push(`${latDeg.toFixed(4)}°, ${lonDeg.toFixed(4)}°`);
+      setPickInfo(bits.join(" · "));
     }, ScreenSpaceEventType.MOUSE_MOVE);
 
     return () => {
@@ -841,22 +943,26 @@ export function EverestScene({
     <div className="scene">
       {!webglOk ? (
         <div className="scene__fallback" role="status">
-          3D map requires WebGL. Data panels remain available.
+          {t("scene.webglRequired", locale)}
         </div>
       ) : (
         <>
           <div
             ref={containerRef}
             className="scene__canvas"
-            aria-label="Everest 3D scene"
+            aria-label={t("scene.map", locale)}
           />
-          <div className="scene__controls" role="group" aria-label="Layers">
+          <div
+            className="scene__controls"
+            role="group"
+            aria-label={t("scene.layers", locale)}
+          >
             <button
               type="button"
               aria-pressed={showSatellite}
               onClick={() => setShowSatellite((v) => !v)}
             >
-              Satellite
+              {t("scene.satellite", locale)}
             </button>
           </div>
           {pickInfo && (
@@ -946,4 +1052,12 @@ function nearestWeatherRecord(
     }
     return a.timestamp < b.timestamp ? 1 : -1;
   })[0];
+}
+
+function removeEntityTree(viewer: Viewer, root: Entity): void {
+  const children = viewer.entities.values.filter(
+    (entity) => entity.parent === root,
+  );
+  for (const child of children) viewer.entities.remove(child);
+  viewer.entities.remove(root);
 }

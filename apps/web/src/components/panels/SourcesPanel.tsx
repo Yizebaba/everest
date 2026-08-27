@@ -1,10 +1,16 @@
 "use client";
 
 import { getDataHealth, getSources } from "@/api/client";
-import { t } from "@/i18n/t";
+import { t, type Locale } from "@/i18n/t";
 import { useApiFetch } from "@/state/useApiFetch";
 
-export function SourcesPanel(): React.JSX.Element {
+export interface SourcesPanelProps {
+  locale?: Locale;
+}
+
+export function SourcesPanel({
+  locale = "en",
+}: SourcesPanelProps): React.JSX.Element {
   const sources = useApiFetch(() => getSources());
   const health = useApiFetch(() => getDataHealth());
 
@@ -19,12 +25,12 @@ export function SourcesPanel(): React.JSX.Element {
     const error = sources.error ?? health.error;
     return (
       <section aria-label="Sources">
-        {t("app.apiError")}: {error?.message ?? "Request failed"}{" "}
+        {t("app.apiError", locale)}: {error?.message ?? "Request failed"}{" "}
         {error && "correlationId" in error && (
           <span>Correlation ID: {String(error.correlationId)} </span>
         )}
         <button type="button" onClick={sources.refetch}>
-          {t("app.retry")}
+          {t("app.retry", locale)}
         </button>
       </section>
     );
@@ -34,14 +40,14 @@ export function SourcesPanel(): React.JSX.Element {
   );
   return (
     <section aria-label="Sources" className="sources">
-      <h2>Sources</h2>
+      <h2>{t("sources.title", locale)}</h2>
       <table>
         <thead>
           <tr>
-            <th scope="col">Source</th>
-            <th scope="col">{t("sources.lifecycle")}</th>
-            <th scope="col">{t("sources.health")}</th>
-            <th scope="col">{t("sources.lastSuccess")}</th>
+            <th scope="col">{t("sources.source", locale)}</th>
+            <th scope="col">{t("sources.lifecycle", locale)}</th>
+            <th scope="col">{t("sources.health", locale)}</th>
+            <th scope="col">{t("sources.lastSuccess", locale)}</th>
           </tr>
         </thead>
         <tbody>

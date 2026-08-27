@@ -2,18 +2,21 @@
 
 import type { CurrentResponse } from "@/api/types";
 import type { FetchState } from "@/state/useApiFetch";
+import { t, type Locale } from "@/i18n/t";
 
 export interface CurrentWeatherPanelProps {
   state: FetchState<CurrentResponse>;
+  locale?: Locale;
 }
 
 export function CurrentWeatherPanel({
   state,
+  locale = "en",
 }: CurrentWeatherPanelProps): React.JSX.Element {
   if (state.status === "idle" || state.status === "loading") {
     return (
-      <section aria-label="Current weather" aria-busy="true">
-        <h2>Current Weather</h2>
+      <section aria-label={t("panels.currentWeather", locale)} aria-busy="true">
+        <h2>{t("panels.currentWeather", locale)}</h2>
         <p>Loading…</p>
       </section>
     );
@@ -24,12 +27,12 @@ export function CurrentWeatherPanel({
         ? String(state.error.correlationId)
         : null;
     return (
-      <section aria-label="Current weather" role="alert">
-        <h2>Current Weather</h2>
+      <section aria-label={t("panels.currentWeather", locale)} role="alert">
+        <h2>{t("panels.currentWeather", locale)}</h2>
         <p>{state.error?.message ?? "Request failed"}</p>
         {correlationId && <p>Correlation ID: {correlationId}</p>}
         <button type="button" onClick={state.refetch}>
-          Retry
+          {t("app.retry", locale)}
         </button>
       </section>
     );
@@ -38,8 +41,11 @@ export function CurrentWeatherPanel({
   const records = state.data?.records ?? [];
   const visibleRecords = records.slice(0, 6);
   return (
-    <section aria-label="Current weather" className="current-weather">
-      <h2>Current Weather</h2>
+    <section
+      aria-label={t("panels.currentWeather", locale)}
+      className="current-weather"
+    >
+      <h2>{t("panels.currentWeather", locale)}</h2>
       {(state.data?.warningCount ?? 0) > 0 && (
         <p role="status">
           {state.data?.warningCount} invalid record(s) isolated
@@ -81,6 +87,13 @@ export function CurrentWeatherPanel({
                             record.wind_direction !== undefined &&
                             ` · ${Math.round(record.wind_direction)}°`}
                         </dd>
+                      </div>
+                    )}
+                  {record.relative_humidity !== null &&
+                    record.relative_humidity !== undefined && (
+                      <div>
+                        <dt>Humidity</dt>
+                        <dd>{record.relative_humidity.toFixed(0)}%</dd>
                       </div>
                     )}
                   {record.precipitation !== null &&

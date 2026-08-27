@@ -5,6 +5,7 @@ export const en = {
     noData: "No data for this selection",
     apiError: "API unreachable",
     retry: "Retry",
+    language: "EN",
   },
   summit: {
     window: "Summit Window",
@@ -14,16 +15,16 @@ export const en = {
     caution: "CAUTION",
     stop: "STOP",
     unavailable: "unavailable",
-    agreement: "source agreement",
+    agreement: "agreement",
     stale: "stale",
   },
   units: {
-    temperature: "°C",
-    windSpeed: "m/s",
-    windDirection: "°",
-    precipitation: "mm",
-    visibility: "m",
-    altitude: "m",
+    temperature: "Temperature",
+    windSpeed: "Wind speed",
+    windDirection: "Wind direction",
+    precipitation: "Precipitation",
+    visibility: "Visibility",
+    altitude: "Altitude",
   },
   layers: {
     terrain: "Terrain",
@@ -32,11 +33,117 @@ export const en = {
     decodePending: "segment metadata available · full decode pending",
   },
   sources: {
+    title: "Sources",
+    source: "Source",
     lifecycle: "Lifecycle",
     health: "Health",
     lastSuccess: "Last success",
     lastFailure: "Last failure",
   },
+  panels: {
+    currentWeather: "Current Weather",
+    forecast: "Forecast",
+    verticalProfile: "Vertical profile",
+    altitudeLadder: "Altitude ladder",
+    modelDisagreement: "Model disagreement",
+    dataPanels: "Data panels",
+  },
+  scene: {
+    satellite: "Satellite",
+    layers: "Layers",
+    map: "Everest 3D scene",
+    webglRequired: "3D map requires WebGL. Data panels remain available.",
+  },
+  domains: {
+    environment: "Environment",
+    terrain: "Terrain",
+    weather: "Weather",
+    sensor: "Sensor",
+    route: "Route",
+    hazard: "Hazard",
+    risk: "Risk",
+    communication: "Communication",
+    device: "Device",
+    mission: "Mission",
+  },
 } as const;
 
-export type MessageKey = keyof typeof en;
+type CatalogShape = {
+  [Section in keyof typeof en]: {
+    [Key in keyof (typeof en)[Section]]: string;
+  };
+};
+
+export const zh = {
+  app: {
+    title: "珠峰 · 冲顶窗口",
+    refresh: "刷新",
+    noData: "该选择暂无数据",
+    apiError: "API 不可达",
+    retry: "重试",
+    language: "中",
+  },
+  summit: {
+    window: "冲顶窗口",
+    basis: "基准",
+    nonAuthoritative: "非权威展示层",
+    go: "可冲顶",
+    caution: "谨慎",
+    stop: "停止",
+    unavailable: "不可用",
+    agreement: "一致性",
+    stale: "陈旧",
+  },
+  units: {
+    temperature: "温度",
+    windSpeed: "风速",
+    windDirection: "风向",
+    precipitation: "降水",
+    visibility: "能见度",
+    altitude: "海拔",
+  },
+  layers: {
+    terrain: "地形",
+    satellite: "卫星",
+    observations: "观测",
+    decodePending: "段元数据可用 · 完整解码待定",
+  },
+  sources: {
+    title: "数据源",
+    source: "数据源",
+    lifecycle: "生命周期",
+    health: "健康度",
+    lastSuccess: "最近成功",
+    lastFailure: "最近失败",
+  },
+  panels: {
+    currentWeather: "当前天气",
+    forecast: "预报",
+    verticalProfile: "垂直剖面",
+    altitudeLadder: "海拔阶梯",
+    modelDisagreement: "模式差异",
+    dataPanels: "数据面板",
+  },
+  scene: {
+    satellite: "卫星",
+    layers: "图层",
+    map: "珠峰三维场景",
+    webglRequired: "三维地图需要 WebGL，数据面板仍可使用。",
+  },
+  domains: {
+    environment: "环境",
+    terrain: "地形",
+    weather: "气象",
+    sensor: "传感器",
+    route: "路线",
+    hazard: "危险源",
+    risk: "风险",
+    communication: "通信",
+    device: "设备",
+    mission: "任务",
+  },
+} as const satisfies CatalogShape;
+
+export type LocaleCatalog = CatalogShape;
+
+export const CATALOGS = { en, zh } as const;
