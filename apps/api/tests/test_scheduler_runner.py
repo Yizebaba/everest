@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from everest_api.scheduler import (
@@ -14,7 +16,36 @@ from everest_api.scheduler import (
     SchedulerConfig,
     run_once,
 )
+from everest_api.scheduler.recording import DataSourceRunRecorder
 import schedule_forecast
+
+
+class _FakeSession:
+    """Minimal context-managed session for recorder state-transition tests."""
+
+    def __init__(self, source, added=None) -> None:
+        self.source = source
+        self.added = [] if added is None else added
+
+    def __enter__(self):
+        """Return this fake session."""
+        return self
+
+    def __exit__(self, *_args):
+        """Do not suppress test exceptions."""
+        return False
+
+    def get(self, _model, source_id):
+        """Return the configured source for its stable id."""
+        return self.source if source_id == "ecmwf-ifs" else None
+
+    def add(self, row):
+        """Capture one added model."""
+        self.added.append(row)
+
+    def commit(self):
+        """Represent a successful no-op commit."""
+        return None
 
 
 def test_partial_failure_is_degraded_and_keeps_independent_counts() -> None:
@@ -112,6 +143,45 @@ def test_optional_sources_are_disabled_by_default() -> None:
     assert not config.icon_enabled
 
 
+def test_build_provider_jobs_only_executes_enabled_real_factories(
+    monkeypatch,
+) -> None:
+    """Enabled optional jobs are concrete lazy factories; disabled ones do not run."""
+    calls: list[str] = []
+
+    monkeypatch.setattr(
+        schedule_forecast,
+        "create_gfs_job",
+        lambda *_args, **_kwargs: lambda: calls.append("gfs") or 2,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        schedule_forecast,
+        "create_aifs_job",
+        lambda *_args, **_kwargs: lambda: calls.append("aifs") or 3,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        schedule_forecast,
+        "create_icon_job",
+        lambda *_args, **_kwargs: lambda: calls.append("icon") or 4,
+        raising=False,
+    )
+    config = SchedulerConfig(
+        ifs_enabled=False,
+        gfs_enabled=True,
+        aifs_enabled=False,
+        icon_enabled=True,
+    )
+
+    jobs = schedule_forecast.build_provider_jobs(config, lambda: 1, object())
+    result = run_once(jobs)
+
+    assert result.status is RunStatus.SUCCESS
+    assert result.records_ingested == 6
+    assert calls == ["gfs", "icon"]
+
+
 def test_failure_detail_is_bounded_and_redacted() -> None:
     """Provider failure accounting cannot persist an obvious credential value."""
 
@@ -166,3 +236,44 @@ def test_ifs_available_empty_cycle_is_a_failure_without_older_substitution(
     with pytest.raises(RuntimeError, match="yielded no records"):
         schedule_forecast._run_ifs_with_fallback(object())
     assert surface_calls == 1
+
+
+def test_run_recorder_updates_explicit_operational_health() -> None:
+    """Terminal run facts, not canonical row presence, own health timestamps."""
+    source = SimpleNamespace(
+        health_status="unknown", last_success_at=None, last_failure_at=None
+    )
+    added = []
+
+    recorder = DataSourceRunRecorder(lambda: _FakeSession(source, added))
+    succeeded = run_once((ProviderJob("ecmwf-ifs", lambda: 1),))
+    recorder(succeeded.outcomes[0])
+
+    assert source.health_status == "healthy"
+    assert source.last_success_at == succeeded.outcomes[0].finished_at
+    assert source.last_failure_at is None
+    assert added[0].outcome == "succeeded"
+
+
+def test_run_recorder_marks_failed_source_without_verifying_it() -> None:
+    """A failed run updates failure health but never changes lifecycle status."""
+    source = SimpleNamespace(
+        status="connected",
+        health_status="healthy",
+        last_success_at=None,
+        last_failure_at=None,
+    )
+
+    failed = run_once(
+        (
+            ProviderJob(
+                "ecmwf-ifs",
+                lambda: (_ for _ in ()).throw(RuntimeError("unavailable")),
+            ),
+        )
+    )
+    DataSourceRunRecorder(lambda: _FakeSession(source))(failed.outcomes[0])
+
+    assert source.status == "connected"
+    assert source.health_status == "failed"
+    assert source.last_failure_at == failed.outcomes[0].finished_at

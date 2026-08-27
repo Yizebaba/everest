@@ -2,8 +2,7 @@
 
 Runs inside WSL where ecCodes, PostgreSQL, and project code are available.
 IFS is enabled by default and retains its latest-cycle fallback. GFS, AIFS, and
-ICON are disabled extension seams until wrappers are explicitly supplied and
-enabled; this scheduler does not claim those sources are live.
+ICON have concrete lazy jobs but remain disabled unless explicitly enabled.
 """
 
 # pylint: disable=wrong-import-position,wrong-import-order,import-outside-toplevel
@@ -185,7 +184,9 @@ def _ingest_ifs(service, cycle: datetime) -> int:
             precipitation=record.precipitation,
             visibility=record.visibility,
             forecast_cycle=record.forecast.cycle,
-            forecast_lead_seconds=int(record.forecast.lead_time.total_seconds()),
+            forecast_lead_seconds=int(
+                record.forecast.lead_time.total_seconds()
+            ),
         )
         service.ingest(descriptor, (canonical,))
         count += 1
@@ -251,7 +252,9 @@ def _pressure_quality_flags(record) -> tuple[str, ...]:
         visibility=None,
         source=record.source,
         model=record.model,
-        forecast=ForecastIdentity(record.cycle, timedelta(seconds=record.lead_seconds)),
+        forecast=ForecastIdentity(
+            record.cycle, timedelta(seconds=record.lead_seconds)
+        ),
     )
     return tuple(sorted(validate_record(probe)))
 
@@ -299,7 +302,9 @@ def _ingest_route_profiles(service, descriptor, records) -> int:
         by_time.setdefault(record.timestamp, []).append(record)
     for timestamp, column in sorted(by_time.items()):
         anchor = column[0]
-        for sample in interpolate_route_profiles(column, ROUTE_PROFILE_ELEVATIONS):
+        for sample in interpolate_route_profiles(
+            column, ROUTE_PROFILE_ELEVATIONS
+        ):
             canonical = CanonicalRecordInput(
                 "forecast",
                 timestamp,
@@ -504,50 +509,79 @@ def _run_ifs_with_fallback(service) -> int:
             raise
         except Exception as exc:  # pylint: disable=broad-exception-caught
             last_error = exc
-            print(f"cycle {cycle.isoformat()} unavailable ({exc}); trying previous")
+            print(
+                f"cycle {cycle.isoformat()} unavailable ({exc}); trying previous"
+            )
             cycle = cycle - timedelta(hours=6)
-    raise RuntimeError("no recent IFS cycle available in the last 48 h") from last_error
+    raise RuntimeError(
+        "no recent IFS cycle available in the last 48 h"
+    ) from last_error
 
 
 class _EmptyIfsCycle(RuntimeError):
     """An available IFS cycle completed but produced no canonical records."""
 
 
-def _unwired_provider(source_id: str):
-    """Create an explicit disabled-by-default extension seam, not a live claim."""
+def create_gfs_job(service, raw_root):
+    """Lazily import and compose the concrete GFS scheduler job."""
+    from everest_api.scheduler.provider_jobs import create_gfs_job as factory
 
-    def _run() -> int:
-        raise RuntimeError(
-            f"{source_id} scheduler wrapper is enabled but not configured"
-        )
-
-    return _run
+    return factory(service, raw_root)
 
 
-def build_provider_jobs(
+def create_aifs_job(service, raw_root):
+    """Lazily import and compose the concrete AIFS scheduler job."""
+    from everest_api.scheduler.provider_jobs import create_aifs_job as factory
+
+    return factory(service, raw_root)
+
+
+def create_icon_job(service):
+    """Lazily import and compose the concrete ICON scheduler job."""
+    from everest_api.scheduler.provider_jobs import create_icon_job as factory
+
+    return factory(service)
+
+
+def build_provider_jobs(  # pylint: disable=too-many-arguments
     config: SchedulerConfig,
     ifs_job,
+    service=None,
     *,
     gfs_job=None,
     aifs_job=None,
     icon_job=None,
 ) -> tuple[ProviderJob, ...]:
-    """Compose source callables; optional wrappers must be explicitly enabled."""
+    """Compose lazy concrete jobs while retaining injectable test seams."""
+    if service is None and any(
+        (config.gfs_enabled, config.aifs_enabled, config.icon_enabled)
+    ):
+        raise RuntimeError(
+            "enabled optional provider jobs require ingestion service"
+        )
+    # Import only when an enabled job needs its default implementation. This
+    # keeps the base API environment independent of optional weather extras.
+    if config.gfs_enabled and gfs_job is None:
+        gfs_job = create_gfs_job(service, RAW_ROOT)
+    if config.aifs_enabled and aifs_job is None:
+        aifs_job = create_aifs_job(service, RAW_ROOT)
+    if config.icon_enabled and icon_job is None:
+        icon_job = create_icon_job(service)
     return (
         ProviderJob("ecmwf-ifs", ifs_job, config.ifs_enabled),
         ProviderJob(
             "noaa-gfs",
-            gfs_job or _unwired_provider("noaa-gfs"),
+            gfs_job or (lambda: 0),
             config.gfs_enabled,
         ),
         ProviderJob(
             "ecmwf-aifs",
-            aifs_job or _unwired_provider("ecmwf-aifs"),
+            aifs_job or (lambda: 0),
             config.aifs_enabled,
         ),
         ProviderJob(
             "dwd-icon",
-            icon_job or _unwired_provider("dwd-icon"),
+            icon_job or (lambda: 0),
             config.icon_enabled,
         ),
     )
@@ -571,7 +605,9 @@ def main() -> int:
     with factory() as session:
         _seed(session)
     config = SchedulerConfig.from_environment()
-    jobs = build_provider_jobs(config, lambda: _run_ifs_with_fallback(service))
+    jobs = build_provider_jobs(
+        config, lambda: _run_ifs_with_fallback(service), service
+    )
     result = run_once(jobs, recorder=DataSourceRunRecorder(factory))
     print(
         f"scheduler {result.status.value}: attempted={result.attempted_sources} "
