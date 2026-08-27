@@ -51,7 +51,9 @@ class HerbieGfsClient:  # pylint: disable=too-few-public-methods
             priority=list(self.source_priority),
         )
         alternatives = "|".join(re.escape(value) for value in request.variables)
-        search = f":({alternatives}):"
+        # Non-capturing group avoids pandas/Herbie's warning that a match group
+        # was present when the pattern is used only as a boolean filter.
+        search = f":(?:{alternatives}):"
         result = client.download(search, save_dir=request.target_dir)
         path = _single_path(result)
         return RetrievedArtifact.from_path(path, "noaa-gfs", request)

@@ -292,6 +292,7 @@ def test_materialize_gfs_wind_field_clips_regional_aoi(
     assert backend == {
         "indexpath": "",
         "filter_by_keys": {"typeOfLevel": "isobaricInhPa", "level": 400},
+        "cache_geo_coords": False,
     }
     payload = json.loads(target.read_text(encoding="utf-8"))
     assert payload["source"] == "noaa-gfs"

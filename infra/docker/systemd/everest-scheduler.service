@@ -18,4 +18,8 @@ Environment=EVEREST_SCHEDULER_ICON_ENABLED=false
 # takes 20 min logs nothing until it exits, so a stuck ingest is
 # indistinguishable from a slow one.
 Environment=PYTHONUNBUFFERED=1
+MemoryHigh=6G
+MemoryMax=8G
+RuntimeMaxSec=1h
+Nice=10
 ExecStart=/opt/everest/worker-venv/bin/python schedule_forecast.py

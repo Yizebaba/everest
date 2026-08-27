@@ -146,6 +146,7 @@ def test_open_grib_uses_cfgrib_without_persistent_index(
                 "backend_kwargs": {
                     "indexpath": "",
                     "filter_by_keys": {"typeOfLevel": "surface"},
+                    "cache_geo_coords": False,
                 },
             },
         )
@@ -395,6 +396,7 @@ def test_herbie_client_uses_official_gfs_contract(tmp_path: Path) -> None:
         "fxx": 6,
         "priority": ["aws", "google", "nomads"],
     }
+    assert calls[1][1] == ":(?:TMP|UGRD):"
     assert artifact.path == tmp_path / "gfs.grib2"
     assert artifact.provider == "noaa-gfs"
 

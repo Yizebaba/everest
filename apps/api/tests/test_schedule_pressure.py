@@ -168,6 +168,7 @@ def test_materialize_wind_field_uses_real_aoi_grid(tmp_path: Path) -> None:
     assert backend == {
         "indexpath": "",
         "filter_by_keys": {"typeOfLevel": "isobaricInhPa", "level": 400},
+        "cache_geo_coords": False,
     }
     payload = __import__("json").loads(target.read_text(encoding="utf-8"))
     assert payload["latitude"] == [28.0]

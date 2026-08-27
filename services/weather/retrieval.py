@@ -255,6 +255,9 @@ def open_grib_dataset(
         backend_kwargs={
             "indexpath": "",
             "filter_by_keys": dict(filter_by_keys),
+            # cfgrib's process-global geography cache can grow across many
+            # grid/cycle reads in a long-running scheduler worker.
+            "cache_geo_coords": False,
         },
     )
 
