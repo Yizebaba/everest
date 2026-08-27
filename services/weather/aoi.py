@@ -30,8 +30,20 @@ class AreaOfInterest:
 
 
 def normalize_longitude(longitude: Any) -> Any:
-    """Normalize scalar or array-like longitudes to the half-open [-180, 180) range."""
+    """Normalize scalar or array-like longitudes to [-180, 180)."""
     return (longitude + 180) % 360 - 180
+
+
+# Regional wind-grid AOI (authoritative, docs/design/regional-wind-field.md):
+# the Everest massif and South Col route, inside the approved 100 km AOI of
+# docs/everest-aoi.md. Both forecast wind-field materializations (ECMWF IFS
+# and NOAA GFS) clip native u/v grids to this envelope without interpolation.
+REGIONAL_GRID_AOI = AreaOfInterest(
+    south=27.5,
+    north=28.5,
+    west=86.4,
+    east=87.4,
+)
 
 
 def subset_dataset(
@@ -116,4 +128,9 @@ def _has_matches(mask: Any) -> bool:
     return bool(value.item() if hasattr(value, "item") else value)
 
 
-__all__ = ["AreaOfInterest", "normalize_longitude", "subset_dataset"]
+__all__ = [
+    "AreaOfInterest",
+    "normalize_longitude",
+    "REGIONAL_GRID_AOI",
+    "subset_dataset",
+]

@@ -162,8 +162,12 @@ export function getForecast(
   );
 }
 
-export function getWindField(): Promise<WindFieldResponse> {
-  return request("/api/weather/wind-field", {}, validateWindField);
+export function getWindField(validTime?: string): Promise<WindFieldResponse> {
+  return request(
+    "/api/weather/wind-field",
+    { valid_time: validTime },
+    validateWindField,
+  );
 }
 
 export function getProfile(label: ProfileLabel): Promise<ProfileResponse> {

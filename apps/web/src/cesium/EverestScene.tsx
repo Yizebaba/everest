@@ -52,15 +52,14 @@ import {
   type SceneSelection,
 } from "@/cesium/selection";
 import {
-  destroyWindFieldLayer,
-  detectWindFieldCapabilities,
-  WindFieldLayer,
+  createRegionalWindField,
+  installRegionalWindSystems,
+  selectRenderableWindFrame,
 } from "@/cesium/wind";
 import {
   AOI_CENTER,
   compassPoint,
   metersToDegrees,
-  oxygenFractionAtAltitude,
   slopeDegrees,
   windVector,
 } from "@/lib/geo";
@@ -77,6 +76,7 @@ if (typeof window !== "undefined" && CESIUM_ION_TOKEN) {
 
 export interface EverestSceneProps {
   records: CanonicalWeatherRecord[];
+  activeTime?: string | null;
   camps?: EverestCamp[];
   route?: [number, number][];
   // Null while the OSM peak node is not persisted; the scene then draws no
@@ -132,6 +132,7 @@ function windParticleSprite(): string | undefined {
 
 export function EverestScene({
   records,
+  activeTime = null,
   camps = [],
   route = [],
   summit = null,
@@ -169,11 +170,14 @@ export function EverestScene({
 
   useEffect(() => {
     let cancelled = false;
-    void getWindField()
+    // Remove the prior frame immediately so an unavailable exact-time request
+    // cannot leave stale particles visible while the lightweight records wait.
+    setWindFieldFrame(null);
+    void getWindField(activeTime ?? undefined)
       .then((response) => {
         if (!cancelled) {
           setWindFieldFrame(
-            response.status === "available" ? response.frame : null,
+            selectRenderableWindFrame(response, activeTime ?? undefined),
           );
         }
       })
@@ -185,7 +189,7 @@ export function EverestScene({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [activeTime]);
 
   useEffect(() => {
     if (!webglOk) {
@@ -196,6 +200,18 @@ export function EverestScene({
       return undefined;
     }
     const recordEntities = entityByRecord.current;
+    // Cesium derives the canvas/framebuffer size from the container. If the
+    // layout has not settled (or header/rail growth collapses the scene box)
+    // the container can report 0, and the first GlobeDepth render then throws
+    // "Expected width to be greater than 0" and stops the render loop. Pin a
+    // one-pixel minimum so the viewer never starts on a 0-sized canvas; the
+    // ResizeObserver below resizes it as soon as the container gets a real box.
+    if (container.clientWidth === 0) {
+      container.style.minWidth = "1px";
+    }
+    if (container.clientHeight === 0) {
+      container.style.minHeight = "1px";
+    }
     let viewer: Viewer | undefined;
     try {
       const options: ConstructorParameters<typeof Viewer>[1] = {
@@ -294,6 +310,26 @@ export function EverestScene({
     }
     viewerRef.current = viewer;
 
+    // Keep the Cesium canvas sized to its container. Cesium only re-sizes on
+    // window resize; when the header/rail layout changes the scene's box, the
+    // canvas would keep a stale size and a transient 0-width framebuffer would
+    // throw in GlobeDepth.update and stop the render loop. A ResizeObserver
+    // keeps canvas and container in sync (viewer.resize() is the public API).
+    const resizeObserver =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(() => {
+            if (viewerRef.current !== viewer || viewer.isDestroyed()) {
+              return;
+            }
+            const width = container.clientWidth;
+            const height = container.clientHeight;
+            if (width > 0 && height > 0) {
+              viewer.resize();
+            }
+          });
+    resizeObserver?.observe(container);
+
     void (async () => {
       try {
         const response = await fetch("/aoi.geojson");
@@ -331,6 +367,7 @@ export function EverestScene({
     })();
 
     return () => {
+      resizeObserver?.disconnect();
       recordEntities.clear();
       satelliteLayerRef.current = null;
       viewerRef.current = null;
@@ -599,144 +636,12 @@ export function EverestScene({
     };
   }, [camps, records, summit, webglOk]);
 
+  // The map weather layer is the regional grid particle field (see the wind
+  // effect below). Single-point records are UI-panel sampling points only and
+  // are no longer drawn as point circles or wind barbs; this effect only keeps
+  // the selection index in sync for panel-driven camp/weather queries.
   useEffect(() => {
-    const viewer = viewerRef.current;
     const selections = sceneEntities.current;
-    if (!viewer) {
-      return;
-    }
-    const toRemove: Entity[] = [];
-    entityByRecord.current.forEach((entity, key) => {
-      if (!records.some((record) => recordKey(record) === key)) {
-        toRemove.push(entity);
-      }
-    });
-    toRemove.forEach((entity) => {
-      viewer.entities.remove(entity);
-      entityByRecord.current.delete(entity.id);
-      const windId = `${entity.id}-wind`;
-      const windEntity = viewer.entities.getById(windId);
-      if (windEntity) {
-        viewer.entities.remove(windEntity);
-      }
-    });
-    for (const record of records) {
-      const key = recordKey(record);
-      const previous = entityByRecord.current.get(key);
-      if (previous) {
-        viewer.entities.remove(previous);
-        const previousWind = viewer.entities.getById(`${key}-wind`);
-        if (previousWind) viewer.entities.remove(previousWind);
-      }
-      const sourceColor = SOURCE_COLORS[record.source] ?? "#9AA5B8";
-      const labelLines: string[] = [];
-      if (record.temperature !== null && record.temperature !== undefined) {
-        labelLines.push(`${record.temperature.toFixed(1)}°C`);
-      }
-      if (
-        record.relative_humidity !== null &&
-        record.relative_humidity !== undefined
-      ) {
-        labelLines.push(`rh ${record.relative_humidity.toFixed(0)}%`);
-      }
-      if (record.wind_speed !== null && record.wind_speed !== undefined) {
-        const dir =
-          record.wind_direction !== null && record.wind_direction !== undefined
-            ? ` ${compassPoint(record.wind_direction)}`
-            : "";
-        labelLines.push(`${record.wind_speed.toFixed(1)} m/s${dir}`);
-      }
-      if (record.altitude > 0) {
-        labelLines.push(
-          `O₂ ${(oxygenFractionAtAltitude(record.altitude) * 100).toFixed(0)}% est.`,
-        );
-      }
-      const description = [
-        `${record.source} · ${record.timestamp}`,
-        record.altitude > 0 ? `alt ${record.altitude.toFixed(0)} m` : null,
-        record.temperature !== null && record.temperature !== undefined
-          ? `temp ${record.temperature.toFixed(1)} °C`
-          : null,
-        record.relative_humidity !== null &&
-        record.relative_humidity !== undefined
-          ? `rh ${record.relative_humidity.toFixed(0)}%`
-          : null,
-        record.wind_speed !== null && record.wind_speed !== undefined
-          ? `wind ${record.wind_speed.toFixed(1)} m/s`
-          : null,
-        record.wind_direction !== null && record.wind_direction !== undefined
-          ? `dir ${record.wind_direction.toFixed(0)}° ${compassPoint(record.wind_direction)}`
-          : null,
-      ]
-        .filter(Boolean)
-        .join(" · ");
-      const entity = new Entity({
-        id: key,
-        position: Cartesian3.fromDegrees(
-          record.longitude,
-          record.latitude,
-          record.altitude,
-        ),
-        point: {
-          pixelSize: 8,
-          color: Color.fromCssColorString(sourceColor),
-          outlineColor: Color.fromCssColorString("#0B0E14"),
-          outlineWidth: 2,
-        },
-        label: {
-          text: labelLines.join("\n"),
-          font: "11px Inter, system-ui, sans-serif",
-          fillColor: Color.fromCssColorString("#E6EAF2"),
-          outlineColor: Color.fromCssColorString("#0B0E14"),
-          outlineWidth: 2,
-          pixelOffset: new Cartesian2(14, -16),
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
-        },
-        description,
-      });
-      viewer.entities.add(entity);
-      entityByRecord.current.set(key, entity);
-      if (
-        record.wind_direction !== null &&
-        record.wind_direction !== undefined
-      ) {
-        const { x, y } = windVector(record.wind_direction);
-        const degrees = Math.atan2(x, y);
-        const lengthMeters = 1800;
-        const dx = Math.sin(degrees) * lengthMeters;
-        const dy = Math.cos(degrees) * lengthMeters;
-        const center = Cartesian3.fromDegrees(
-          record.longitude,
-          record.latitude,
-          record.altitude,
-        );
-        // A degree of longitude spans only cos(latitude) as many metres as a
-        // degree of latitude, so dividing both offsets by the latitude figure
-        // stretched the barb eastward and rotated the drawn direction away from
-        // the reported one by up to ~13 degrees at this latitude.
-        const offset = metersToDegrees(record.latitude, dx, dy);
-        const tip = Cartesian3.fromDegrees(
-          record.longitude + offset.deltaLongitude,
-          record.latitude + offset.deltaLatitude,
-          record.altitude,
-        );
-        viewer.entities.add(
-          new Entity({
-            id: `${key}-wind`,
-            polyline: {
-              positions: [center, tip],
-              width: 3,
-              material: Color.fromCssColorString(sourceColor).withAlpha(0.9),
-              // Drawn at the record's own altitude. Clamping to ground pinned
-              // every barb to the terrain surface, so a 300 hPa wind at 9800 m
-              // and a 10 m surface wind rendered as the same line and the
-              // vertical wind structure was invisible.
-              clampToGround: false,
-            },
-          }),
-        );
-      }
-    }
     selections.weather = new Map(
       records.map((record) => [recordKey(record), record]),
     );
@@ -748,132 +653,110 @@ export function EverestScene({
   useEffect(() => {
     const viewer = viewerRef.current;
     if (!viewer || !windFieldFrame) return;
-    if (
-      windFieldFrame.u.some((value) => value === null) ||
-      windFieldFrame.v.some((value) => value === null)
-    ) {
-      // Missing source cells remain missing. Do not synthesize vectors merely
-      // to make a texture complete; retain the record-particle fallback.
-      return;
-    }
-
-    const capabilities = detectWindFieldCapabilities(viewer.scene.canvas);
-    const layer = new WindFieldLayer(
-      viewer.scene,
-      windFieldFrame,
-      capabilities,
-    );
+    // Regional wind grid: one emitter per exact renderable backend grid node.
+    // Missing nodes are omitted without suppressing the remaining field. This
+    // is the map weather layer;
+    // single-point records are UI-panel sampling only.
+    const field = createRegionalWindField(viewer.scene, windFieldFrame, {
+      stride: 1,
+    });
 
     return () => {
-      // WindFieldLayer owns its resources and tolerates the Viewer/Scene having
-      // already been destroyed by the parent effect cleanup.
-      destroyWindFieldLayer(layer);
+      // Same teardown guard as the sibling effects: on unmount the viewer
+      // effect's cleanup runs first and destroys the scene, so this layer's
+      // scene reference is no longer safe to touch.
+      field.destroy();
     };
   }, [windFieldFrame]);
 
   useEffect(() => {
     const viewer = viewerRef.current;
-    if (!viewer) {
+    if (!viewer || windFieldFrame) {
+      // When the regional grid field is live it is the map weather layer; the
+      // per-record emitters are only the lightweight fallback for the
+      // frame-unavailable case.
       return;
     }
     // Wind particle field: one emitter per weather grid point with a valid
     // wind direction, streaming particles along the meteorological travel
     // vector above the terrain.
-    const systems = new Map<string, ParticleSystem>();
+    const systems: ParticleSystem[] = [];
     const image = windParticleSprite();
-    for (const record of records) {
-      if (
-        record.wind_direction === null ||
-        record.wind_direction === undefined ||
-        record.wind_speed === null ||
-        record.wind_speed === undefined ||
-        image === undefined
-      ) {
-        continue;
-      }
-      const key = `particle-${recordKey(record)}`;
-      const { x, y } = windVector(record.wind_direction);
-      const heading = Math.atan2(x, y);
-      const speed = Math.max(record.wind_speed, 2.0); // m/s visual baseline
-      const position = Cartesian3.fromDegrees(
-        record.longitude,
-        record.latitude,
-        record.altitude + 400,
-      );
-      const sourceColor = Color.fromCssColorString(
-        SOURCE_COLORS[record.source] ?? "#9AA5B8",
-      );
-      // The wind vector is east/north/up in the local frame at this point.
-      // `particle.position` is an ECEF world coordinate, so the drift has to be
-      // rotated into ECEF first; adding the local triple straight onto the world
-      // position sent particles off in a direction unrelated to the reported
-      // wind (roughly toward the Gulf of Guinea, whatever the forecast said).
-      const enuToFixed = Transforms.eastNorthUpToFixedFrame(position);
-      const drift = Matrix4.multiplyByPointAsVector(
-        enuToFixed,
-        new Cartesian3(Math.sin(heading) * speed, Math.cos(heading) * speed, 0),
-        new Cartesian3(),
-      );
-      const system = new ParticleSystem({
-        image,
-        startColor: sourceColor.withAlpha(0.7),
-        endColor: sourceColor.withAlpha(0.0),
-        startScale: 1,
-        endScale: 0.15,
-        particleLife: 1.2,
-        speed,
-        imageSize: new Cartesian2(4, 4),
-        emissionRate: 3,
-        bursts: [
-          new ParticleBurst({
-            time: 0.0,
-            minimum: 4,
-            maximum: 6,
+    try {
+      for (const record of records) {
+        if (
+          record.wind_direction === null ||
+          record.wind_direction === undefined ||
+          record.wind_speed === null ||
+          record.wind_speed === undefined ||
+          image === undefined
+        ) {
+          continue;
+        }
+        const { x, y } = windVector(record.wind_direction);
+        const heading = Math.atan2(x, y);
+        const speed = record.wind_speed;
+        const position = Cartesian3.fromDegrees(
+          record.longitude,
+          record.latitude,
+          record.altitude,
+        );
+        const sourceColor = Color.fromCssColorString(
+          SOURCE_COLORS[record.source] ?? "#9AA5B8",
+        );
+        const enuToFixed = Transforms.eastNorthUpToFixedFrame(position);
+        const drift = Matrix4.multiplyByPointAsVector(
+          enuToFixed,
+          new Cartesian3(
+            Math.sin(heading) * speed,
+            Math.cos(heading) * speed,
+            0,
+          ),
+          new Cartesian3(),
+        );
+        systems.push(
+          new ParticleSystem({
+            image,
+            startColor: sourceColor.withAlpha(0.7),
+            endColor: sourceColor.withAlpha(0),
+            startScale: 1,
+            endScale: 0.15,
+            particleLife: 1.2,
+            speed: 0,
+            imageSize: new Cartesian2(4, 4),
+            emissionRate: 3,
+            bursts: [new ParticleBurst({ time: 0, minimum: 4, maximum: 6 })],
+            emitter: new CircleEmitter(0),
+            updateCallback: (particle, dt) => {
+              particle.position = Cartesian3.add(
+                particle.position,
+                Cartesian3.multiplyByScalar(drift, dt, new Cartesian3()),
+                particle.position,
+              );
+              return particle;
+            },
+            modelMatrix: enuToFixed,
           }),
-        ],
-        emitter: new CircleEmitter(40),
-        updateCallback: (particle, dt) => {
-          particle.position = Cartesian3.add(
-            particle.position,
-            Cartesian3.multiplyByScalar(drift, dt, new Cartesian3()),
-            particle.position,
-          );
-          return particle;
-        },
-        // East-north-up rather than a bare translation, so the emitter disc lies
-        // in the local horizontal plane instead of being tilted by however this
-        // point is oriented in ECEF.
-        modelMatrix: enuToFixed,
+        );
+      }
+    } catch {
+      systems.forEach((system) => {
+        if (!system.isDestroyed()) system.destroy();
       });
-      viewer.scene.primitives.add(system);
-      systems.set(key, system);
+      return;
     }
-    // Particles only advance on rendered frames. `requestRenderMode` draws just
-    // once per camera change, which froze the field mid-flight; continuous
-    // rendering is enabled only while a field is actually live.
-    const restoreRequestRenderMode =
-      systems.size > 0 && viewer.scene.requestRenderMode;
-    if (restoreRequestRenderMode) {
-      viewer.scene.requestRenderMode = false;
+    let field: { destroy(): void };
+    try {
+      field = installRegionalWindSystems(viewer.scene, systems);
+    } catch {
+      // Transactional installer has already rolled back all constructed
+      // systems. Leave the scene usable even if a primitive add fails.
+      return;
     }
     return () => {
-      // If the current viewer has been replaced or destroyed, viewerRef no
-      // longer points at this instance; do not touch viewer internals (calling
-      // isDestroyed() on a torn-down Viewer can itself throw).
-      if (viewerRef.current !== viewer) {
-        return;
-      }
-      for (const system of systems.values()) {
-        if (viewer.scene.primitives.contains(system)) {
-          viewer.scene.primitives.remove(system);
-        }
-      }
-      systems.clear();
-      if (restoreRequestRenderMode) {
-        viewer.scene.requestRenderMode = true;
-      }
+      field.destroy();
     };
-  }, [records]);
+  }, [records, windFieldFrame]);
 
   useEffect(() => {
     const viewer = viewerRef.current;
@@ -1056,6 +939,12 @@ export function EverestScene({
             className="scene__canvas"
             aria-label={t("scene.map", locale)}
           />
+          {windFieldFrame && (
+            <div className="scene__wind-plane" role="status">
+              {windFieldFrame.level} {windFieldFrame.level_units} wind ·
+              visualization plane
+            </div>
+          )}
           <div
             className="scene__controls"
             role="group"
@@ -1100,6 +989,18 @@ export function EverestScene({
           left: 12px;
           display: flex;
           gap: 8px;
+        }
+        .scene__wind-plane {
+          position: absolute;
+          top: 12px;
+          right: 12px;
+          background: rgba(20, 26, 36, 0.92);
+          border: 1px solid #2c3a52;
+          border-radius: 6px;
+          color: #9aa5b8;
+          font-size: 11px;
+          padding: 5px 8px;
+          pointer-events: none;
         }
         .scene__controls button {
           background: #141a24;

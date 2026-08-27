@@ -23,7 +23,11 @@ SCHEMA_VERSION = 1
 _DEFAULT_MAX_AXIS = 1_000
 _DEFAULT_MAX_POINTS = 250_000
 _DEFAULT_MAX_BYTES = 16 * 1024 * 1024
+_DEFAULT_MAX_INDEX_ENTRIES = 512
+_MAX_INDEX_BYTES = 256 * 1024
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+_DIGEST = re.compile(r"^[0-9a-f]{64}$")
+_INDEX_NAME = "valid-time-index.json"
 
 
 @dataclass(frozen=True)
@@ -34,6 +38,7 @@ class WindFieldLimits:
     max_longitudes: int = _DEFAULT_MAX_AXIS
     max_points: int = _DEFAULT_MAX_POINTS
     max_serialized_bytes: int = _DEFAULT_MAX_BYTES
+    max_index_entries: int = _DEFAULT_MAX_INDEX_ENTRIES
 
     def __post_init__(self) -> None:
         if (
@@ -42,6 +47,7 @@ class WindFieldLimits:
                 self.max_longitudes,
                 self.max_points,
                 self.max_serialized_bytes,
+                self.max_index_entries,
             )
             <= 0
         ):
@@ -159,7 +165,9 @@ def materialize_wind_field_frame(
     limits: WindFieldLimits | None = None,
     excluded_roots: Iterable[Path | str] = (),
 ) -> Path:
-    """Atomically store canonical JSON by digest and update latest."""
+    """Atomically store canonical JSON and bounded lookup metadata."""
+    # Validation and three small atomic artifacts require explicit local state.
+    # pylint: disable=too-many-locals
     active_limits = limits or WindFieldLimits()
     payload = _canonical_json(frame.to_dict())
     if len(payload) > active_limits.max_serialized_bytes:
@@ -188,6 +196,10 @@ def materialize_wind_field_frame(
     directory = root / "wind-field"
     directory.mkdir(parents=True, exist_ok=True)
     _require_safe_directory(directory)
+    index_path = directory / _INDEX_NAME
+    entries = _read_valid_time_index(
+        index_path, active_limits.max_index_entries
+    )
     target = directory / f"{digest}.json"
     if target.is_symlink():
         raise ValueError("derived digest file must not be a symlink")
@@ -207,7 +219,146 @@ def materialize_wind_field_frame(
         raise ValueError("derived latest file must not be a symlink")
     if not latest.exists() or _read_regular_file(latest, 1_024) != pointer:
         _atomic_write(latest, pointer)
+    _update_valid_time_index(
+        index_path,
+        entries,
+        frame,
+        digest,
+        active_limits.max_index_entries,
+    )
     return target
+
+
+def _update_valid_time_index(
+    path: Path,
+    entries: dict[str, dict[str, str]],
+    frame: WindFieldFrame,
+    digest: str,
+    maximum_entries: int,
+) -> None:
+    entry = {
+        "cycle": frame.cycle,
+        "model": frame.model,
+        "sha256": digest,
+        "source": frame.source,
+    }
+    current = entries.get(frame.valid_time)
+    updated = entries
+    if current is None or _index_rank(entry) > _index_rank(current):
+        updated = {**entries, frame.valid_time: entry}
+    bounded = _bounded_index_entries(updated, maximum_entries)
+    index_payload = _canonical_json(
+        {"entries": bounded, "schema_version": SCHEMA_VERSION}
+    )
+    if len(index_payload) > _MAX_INDEX_BYTES:
+        raise ValueError("wind-field index exceeds byte limit")
+    if (
+        not path.exists()
+        or _read_regular_file(path, _MAX_INDEX_BYTES) != index_payload
+    ):
+        _atomic_write(path, index_payload)
+
+
+def _read_valid_time_index(
+    path: Path, maximum_entries: int
+) -> dict[str, dict[str, str]]:
+    if path.is_symlink():
+        raise ValueError("derived wind-field index must not be a symlink")
+    if not path.exists():
+        return {}
+    try:
+        value = json.loads(
+            _read_regular_file(path, _MAX_INDEX_BYTES),
+            parse_constant=_reject_json_constant,
+            object_pairs_hook=_unique_json_object,
+        )
+    except (
+        OSError,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        TypeError,
+    ) as error:
+        raise ValueError("derived wind-field index is invalid") from error
+    if not isinstance(value, dict) or set(value) != {
+        "entries",
+        "schema_version",
+    }:
+        raise ValueError("derived wind-field index is invalid")
+    if (
+        not isinstance(value["schema_version"], int)
+        or isinstance(value["schema_version"], bool)
+        or value["schema_version"] != SCHEMA_VERSION
+    ):
+        raise ValueError("derived wind-field index is invalid")
+    if not isinstance(value["entries"], dict):
+        raise ValueError("derived wind-field index is invalid")
+    entries = value["entries"]
+    if len(entries) > maximum_entries:
+        raise ValueError("derived wind-field index is invalid")
+    if any(
+        not _valid_index_entry(valid_time, entry)
+        for valid_time, entry in entries.items()
+    ):
+        raise ValueError("derived wind-field index is invalid")
+    return entries
+
+
+def _valid_index_entry(valid_time: Any, entry: Any) -> bool:
+    if not isinstance(valid_time, str) or _parse_utc_z(valid_time) is None:
+        return False
+    if not isinstance(entry, dict) or set(entry) != {
+        "cycle",
+        "model",
+        "sha256",
+        "source",
+    }:
+        return False
+    return (
+        _parse_utc_z(entry["cycle"]) is not None
+        and isinstance(entry["source"], str)
+        and bool(_IDENTIFIER.fullmatch(entry["source"]))
+        and isinstance(entry["model"], str)
+        and bool(_IDENTIFIER.fullmatch(entry["model"]))
+        and isinstance(entry["sha256"], str)
+        and bool(_DIGEST.fullmatch(entry["sha256"]))
+    )
+
+
+def _bounded_index_entries(
+    entries: dict[str, dict[str, str]], maximum_entries: int
+) -> dict[str, dict[str, str]]:
+    ordered = sorted(entries.items(), key=lambda item: _parse_utc_z(item[0]))
+    return dict(ordered[-maximum_entries:])
+
+
+def _index_rank(entry: dict[str, str]) -> tuple[datetime, str, str, str]:
+    cycle = _parse_utc_z(entry["cycle"])
+    if cycle is None:  # The caller validates every index entry first.
+        raise ValueError("derived wind-field index is invalid")
+    return cycle, entry["source"], entry["model"], entry["sha256"]
+
+
+def _parse_utc_z(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value.endswith("Z"):
+        return None
+    try:
+        parsed = datetime.fromisoformat(f"{value[:-1]}+00:00")
+    except ValueError:
+        return None
+    return parsed if parsed.utcoffset() == timedelta(0) else None
+
+
+def _reject_json_constant(value: str) -> None:
+    raise ValueError(f"non-finite JSON constant rejected: {value}")
+
+
+def _unique_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate JSON object key rejected")
+        result[key] = value
+    return result
 
 
 def _coordinate(dataset: Any, name: str) -> list[float]:

@@ -65,6 +65,25 @@ describe("API client", () => {
     );
   });
 
+  it("requests an exact optional wind-field valid_time", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          status: "unavailable",
+          reason: "frame_not_found",
+          frame: null,
+        }),
+        { status: 200 },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await getWindField("2026-08-27T12:00:00Z");
+
+    const url = new URL(String(fetchMock.mock.calls[0][0]));
+    expect(url.searchParams.get("valid_time")).toBe("2026-08-27T12:00:00Z");
+  });
+
   it("sends a correlation ID and validates a successful response", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ records: [RECORD] }), {

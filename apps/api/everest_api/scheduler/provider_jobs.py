@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, timedelta
+import os
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +28,11 @@ GFS_SURFACE_INVENTORY = (
     "HGT:surface",
     "VIS:surface",
 )
+# Isobaric U/V fields used to materialize the regional wind grid frame. Kept
+# separate from the surface inventory so the point record never mixes 400 hPa
+# winds into a 10 m surface row.
+GFS_WIND_GRID_INVENTORY = ("UGRD:400 mb", "VGRD:400 mb")
+GFS_WIND_GRID_LEVEL_HPA = 400
 AIFS_SURFACE_INVENTORY = ("z", "10u", "10v", "2t", "tp")
 APPROVED_HERBIE_PRIORITY = ("aws", "google", "nomads")
 APPROVED_HERBIE_SOURCES = frozenset(APPROVED_HERBIE_PRIORITY)
@@ -261,7 +267,101 @@ def _ingest_gfs_lead(
         weather, f"gfs:0p25:{weather.latitude:.5f}:{weather.longitude:.5f}"
     )
     adapter.ingest(raw, (record,))
+    # Regional wind grid (optional, non-blocking, like the IFS frame). The
+    # retained isobaric U/V artifact is decoded with cfgrib/xarray, clipped to
+    # the regional AOI, and materialized as a complete u/v grid frame. A missing
+    # derived root or optional extras only skips the frame; it never fails the
+    # canonical point ingestion.
+    if os.environ.get("EVEREST_WIND_FIELD_DERIVED_ROOT"):
+        try:
+            grid_request = RetrievalRequest(
+                cycle, lead, GFS_WIND_GRID_INVENTORY, root / "noaa-gfs"
+            )
+            grid_artifact = client.retrieve(grid_request)
+            _validate_artifact(grid_artifact, "noaa-gfs", grid_request)
+            _validate_herbie_client(client, require_resolved=True)
+            _materialize_gfs_wind_field(
+                grid_artifact.path, cycle, lead, raw_root=root
+            )
+        except Exception as error:  # pylint: disable=broad-exception-caught
+            # The derived visualization remains explicitly non-blocking.
+            print(
+                f"  GFS wind grid +{lead}h unavailable; continuing: "
+                f"{_bounded_failure_detail(error)}"
+            )
     return 1
+
+
+def _materialize_gfs_wind_field(
+    artifact_path,
+    cycle,
+    lead_hours,
+    *,
+    derived_root=None,
+    raw_root=None,
+    opener=None,
+):
+    """Publish one native-grid 400 hPa GFS U/V frame from retained GRIB.
+
+    Mirrors the IFS materialization in ``apps/api/schedule_forecast.py``: the
+    retained isobaric artifact is decoded with cfgrib, clipped to the regional
+    grid AOI, loaded before the source Dataset closes, and materialized to the
+    external derived root. No provider call occurs here, and the point record
+    pipeline is never affected by this derived visualization path.
+    """
+    from services.weather.aoi import (  # pylint: disable=import-outside-toplevel
+        REGIONAL_GRID_AOI,
+        subset_dataset,
+    )
+    from services.weather.retrieval import (  # pylint: disable=import-outside-toplevel
+        open_grib_dataset,
+    )
+    from services.weather.wind_field import (  # pylint: disable=import-outside-toplevel
+        build_wind_field_frame,
+        materialize_wind_field_frame,
+    )
+
+    root = derived_root or os.environ.get("EVEREST_WIND_FIELD_DERIVED_ROOT")
+    if not root:
+        return None
+    with open_grib_dataset(
+        artifact_path,
+        filter_by_keys={
+            "typeOfLevel": "isobaricInhPa",
+            "level": GFS_WIND_GRID_LEVEL_HPA,
+        },
+        opener=opener,
+    ) as dataset:
+        subset = subset_dataset(
+            dataset,
+            REGIONAL_GRID_AOI,
+            variables=("u", "v"),
+        ).load()
+        frame = build_wind_field_frame(
+            subset,
+            source="noaa-gfs",
+            model="GFS",
+            cycle=cycle,
+            valid_time=cycle + timedelta(hours=lead_hours),
+            lead=timedelta(hours=lead_hours),
+            level=GFS_WIND_GRID_LEVEL_HPA,
+            level_units="hPa",
+            bounds=(
+                REGIONAL_GRID_AOI.west,
+                REGIONAL_GRID_AOI.south,
+                REGIONAL_GRID_AOI.east,
+                REGIONAL_GRID_AOI.north,
+            ),
+        )
+    target_root = root if lead_hours == 0 else Path(root) / "forecast-leads"
+    excluded = tuple(
+        excluded_root
+        for excluded_root in (Path(raw_root) if raw_root else None,)
+        if excluded_root is not None
+    )
+    return materialize_wind_field_frame(
+        frame, target_root, excluded_roots=excluded
+    )
 
 
 def _ingest_aifs_lead(

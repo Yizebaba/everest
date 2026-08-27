@@ -7,16 +7,19 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import xarray as xr
 
 from services.weather.retrieval import RetrievedArtifact
 from everest_api.scheduler import ProviderRunResult
 from everest_api.scheduler.provider_jobs import (
     GFS_SURFACE_INVENTORY,
     ProviderJobConfigurationError,
+    _materialize_gfs_wind_field,  # pylint: disable=protected-access
     create_aifs_job,
     create_gfs_job,
     create_icon_job,
@@ -62,7 +65,11 @@ def _weather(source: str, model: str, lead: int = 0):
     )
 
 
-def test_gfs_job_uses_surface_inventory_and_preserves_identity(tmp_path: Path):
+def test_gfs_job_uses_surface_inventory_and_preserves_identity(
+    tmp_path: Path, monkeypatch
+):
+    """Without a derived root, GFS performs only the point-data retrieval."""
+    monkeypatch.delenv("EVEREST_WIND_FIELD_DERIVED_ROOT", raising=False)
     service = _CaptureService()
     requests = []
 
@@ -93,6 +100,7 @@ def test_gfs_job_uses_surface_inventory_and_preserves_identity(tmp_path: Path):
     )
 
     assert job() == 1
+    assert len(requests) == 1
     assert requests[0].variables == GFS_SURFACE_INVENTORY
     raw, records = adapter_calls[0]
     assert (raw.source_id, raw.model) == ("noaa-gfs", "GFS")
@@ -218,4 +226,82 @@ def test_icon_job_uses_connector_and_adapter_with_icon_identity(tmp_path: Path):
     assert (records[0].weather.source, records[0].weather.model) == (
         "dwd-icon",
         "ICON",
+    )
+
+
+def test_materialize_gfs_wind_field_clips_regional_aoi(
+    tmp_path: Path,
+) -> None:
+    """A retained GFS isobaric U/V artifact becomes a regional grid frame."""
+    captured: dict[str, object] = {}
+    dataset = xr.Dataset(
+        {
+            "u": (
+                ("latitude", "longitude"),
+                [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]],
+            ),
+            "v": (
+                ("latitude", "longitude"),
+                [[-1.0, -2.0, -3.0], [-4.0, -5.0, -6.0], [-7.0, -8.0, -9.0]],
+            ),
+        },
+        coords={
+            "latitude": [29.0, 28.0, 27.0],
+            "longitude": [85.0, 87.0, 89.0],
+        },
+    )
+
+    def _open(path, **kwargs):
+        captured["path"] = path
+        captured["kwargs"] = kwargs
+        return dataset
+
+    artifact = tmp_path / "gfs-wind.grib2"
+    artifact.write_bytes(b"GRIB fixture")
+    cycle = datetime(2026, 8, 27, 0, tzinfo=UTC)
+
+    target = _materialize_gfs_wind_field(  # pylint: disable=protected-access
+        artifact,
+        cycle,
+        6,
+        derived_root=tmp_path / "derived",
+        raw_root=tmp_path / "raw",
+        opener=_open,
+    )
+
+    assert target is not None
+    assert captured["path"] == artifact
+    backend = captured["kwargs"]["backend_kwargs"]
+    assert backend == {
+        "indexpath": "",
+        "filter_by_keys": {"typeOfLevel": "isobaricInhPa", "level": 400},
+    }
+    payload = json.loads(target.read_text(encoding="utf-8"))
+    assert payload["source"] == "noaa-gfs"
+    assert payload["model"] == "GFS"
+    assert payload["latitude"] == [28.0]
+    assert payload["longitude"] == [87.0]
+    assert payload["u"] == [5.0]
+    assert payload["v"] == [-5.0]
+    assert payload["valid_time"] == "2026-08-27T06:00:00Z"
+    assert payload["bounds"] == {
+        "west": 86.4,
+        "south": 27.5,
+        "east": 87.4,
+        "north": 28.5,
+    }
+
+
+def test_materialize_gfs_wind_field_is_disabled_without_root(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A missing derived root leaves the point ingestion untouched."""
+    monkeypatch.delenv("EVEREST_WIND_FIELD_DERIVED_ROOT", raising=False)
+    assert (
+        _materialize_gfs_wind_field(  # pylint: disable=protected-access
+            tmp_path / "unused.grib2",
+            datetime(2026, 8, 27, tzinfo=UTC),
+            0,
+        )
+        is None
     )

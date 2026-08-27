@@ -174,7 +174,7 @@ five weather/health contracts above:
 | `GET /api/satellite/segments` | Satellite segment listing; optional `band` filter |
 | `GET /api/everest/route` | OSM South Col route polyline and camp points (EV-OSM-002) |
 | `GET /api/risk/summit-window` | Read-only assessment from the existing Python Risk Engine using the newest persisted SUMMIT basis |
-| `GET /api/weather/wind-field` | Latest integrity-checked, AOI-bounded derived U/V frame; explicit unavailable response when not materialized |
+| `GET /api/weather/wind-field` | Integrity-checked, AOI-bounded derived U/V frame; explicit unavailable response when not materialized |
 | `GET /healthz` | Process liveness |
 | `GET /readyz` | Readiness (database reachable) |
 
@@ -190,10 +190,37 @@ hold, disposition, and audit fields.
 
 `/api/weather/wind-field` is an additive visualization projection and is not a
 new canonical weather contract or ADR-015 evidence route. The GET handler never
-contacts a provider or decodes GRIB. The scheduler derives a native-grid 400 hPa
-frame from an already retained IFS pressure artifact with `cfgrib`/`xarray`,
-clips it to the approved 100 km AOI envelope without interpolation, and
-publishes it atomically under the configured external derived root.
+contacts a provider or decodes GRIB. Regional frame materialization opens a
+retained pressure-level GRIB through `cfgrib`/`xarray`, selects native 400 hPa
+U/V arrays, clips them without interpolation to the exact inclusive WGS 84
+rectangle `south=27.5`, `north=28.5`, `west=86.4`, `east=87.4`, and publishes
+content-addressed JSON atomically under the configured external derived root.
+Direct ecCodes parsing remains a canonical point-ingestion path, not the grid
+materialization mechanism.
+
+The API reader accepts only the exact source/model pairs `ecmwf-ifs`/`IFS` and
+`noaa-gfs`/`GFS`; arbitrary or mismatched identities are rejected. GFS regional
+retrieval/materialization is connector/configured only: no real GFS regional
+grid materialization is claimed until an enabled scheduler run produces and
+serves one.
+
+The optional `valid_time` parameter must be an explicit UTC RFC 3339 `Z`
+timestamp. When supplied, it
+selects only a materialized frame whose `frame.valid_time` exactly equals the
+requested instant; an absent exact match returns the normal `unavailable`
+envelope and never falls back to latest. With no query, the root latest pointer
+is used.
+
+Frame validation hard-limits each latitude and longitude axis to 1,000 values,
+the grid to 250,000 points, and serialized JSON to 16 MiB. The validated-frame
+cache holds at most 8 entries. Files must be bounded regular non-symlink files,
+and their content must match the SHA-256 named by the latest pointer.
+
+The frame's `level=400` and `level_units=hPa` describe a pressure surface. The
+frontend displays it on a fixed 7,500 m, clearly non-geometric visualization
+plane; neither the API nor UI converts 400 hPa to a physical geometric height.
+Rendering uses Cesium's public `ParticleSystem` API as the complete rendering
+boundary for this feature.
 
 `/api/risk/summit-window` reads PostgreSQL only and calls
 `services/risk/engine.py`. Its `go`, `caution`, `block`, and `unknown` values are

@@ -11,7 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "cesium": "^1.130.0",
+    "cesium": "1.144.0",
     "next": "^15.3.3",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"

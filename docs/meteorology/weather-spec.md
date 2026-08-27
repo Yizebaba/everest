@@ -1,5 +1,50 @@
 # Canonical Weather Schema
 
+## Regional Wind Grid (authoritative, corrected 2026-08-28)
+
+Regional IFS frame materialization opens retained pressure-level GRIB through
+`cfgrib`/`xarray`, not through the direct ecCodes parser used by canonical
+point ingestion. It retains complete 2-D `u` (eastward wind, m/s) and `v`
+(northward wind, m/s) matrices. GFS has connector/configuration code for the
+same path but no claimed real grid materialization. The exact regional grid AOI
+is the inclusive WGS 84 rectangle:
+
+| Bound | Value |
+| --- | --- |
+| `south` / `min_lat` | 27.5 |
+| `north` / `max_lat` | 28.5 |
+| `west` / `min_lon` | 86.4 |
+| `east` / `max_lon` | 87.4 |
+
+It is defined once as `REGIONAL_GRID_AOI` in `services/weather/aoi.py`. This is
+a visualization subset inside the approved 100 km geodesic-radius AOI in
+`docs/everest-aoi.md`; it does not redefine the project AOI.
+
+Single-point coordinates (EBC / C1 / C2 / C3 / C4 / Summit) are sampling
+points for the floating UI panels only; they are not the map weather layer's
+display. The canonical record schema and field meanings below are unchanged;
+the grid projection is the additive `WindFieldFrame` contract
+(`docs/design/regional-wind-field.md`, `docs/api/API.md`).
+
+`WindFieldFrame.valid_time` is a forecast identity field and must equal
+`cycle + lead_seconds`. The reviewed API selector is exact: an explicit UTC
+`Z` timestamp matches only an identically timed materialized frame, never the
+nearest frame and never latest as a fallback. The reader accepts only the exact
+`ecmwf-ifs`/`IFS` and `noaa-gfs`/`GFS` pairs.
+
+Regional rendering seeds exact retained grid nodes and uses each node's exact
+U/V pair. It performs no interpolation and skips a node when either component
+is missing. The 400 hPa pressure field is shown on a fixed 7,500 m
+non-geometric visualization plane. That display plane is not a conversion from
+pressure to altitude and must not be used as meteorological height evidence.
+
+The wire/storage hard limits are 1,000 values per axis, 250,000 grid points,
+16 MiB serialized JSON, and 8 validated cache entries. The frontend contract
+hard-caps exact-node seed emitters at 256, including caller overrides, and uses
+Cesium's public `ParticleSystem` as its rendering boundary. Particle initial
+speed and emitter radius are zero; the update callback applies only the exact
+retained-node U/V displacement.
+
 ## EV-DATA-001-F-AIFS-DOCS-CLOSE-RETRY — authoritative hardened DBRE evidence
 
 This documentation-only retry is the authoritative closure record for the

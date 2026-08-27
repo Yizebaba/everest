@@ -30,7 +30,10 @@ from everest_api.sources.models import (
 )
 from everest_api.weather.models import WeatherRecordModel
 from everest_api.weather.service import WeatherQueryService
-from everest_api.weather.wind_field import read_latest_wind_field
+from everest_api.weather.wind_field import (
+    read_latest_wind_field,
+    read_wind_field_at,
+)
 
 
 _CORRELATION_HEADER = "X-Correlation-ID"
@@ -244,7 +247,7 @@ def create_app(
             response.headers["X-Correlation-ID"] = value
 
     @app.get("/api/weather/wind-field")
-    def wind_field() -> dict[str, object]:
+    def wind_field(valid_time: UtcDateTime | None = None) -> dict[str, object]:
         """Return only a precomputed local frame; never parse or fetch on GET."""
         configured_root = wind_field_root or os.environ.get(
             "EVEREST_WIND_FIELD_DERIVED_ROOT"
@@ -255,7 +258,11 @@ def create_app(
                 "reason": "not_configured",
                 "frame": None,
             }
-        frame = read_latest_wind_field(configured_root)
+        frame = (
+            read_wind_field_at(configured_root, valid_time)
+            if valid_time is not None
+            else read_latest_wind_field(configured_root)
+        )
         if frame is None:
             return {
                 "status": "unavailable",

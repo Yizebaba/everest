@@ -81,6 +81,7 @@ export default function Page(): React.JSX.Element {
         <div className="dashboard__scene">
           <EverestScene
             records={records}
+            activeTime={activeTime}
             camps={everestRoute.data?.camps ?? []}
             route={everestRoute.data?.route ?? []}
             summit={everestRoute.data?.summit ?? null}
@@ -174,6 +175,7 @@ export default function Page(): React.JSX.Element {
         .dashboard__scene {
           position: relative;
           min-width: 0;
+          min-height: 260px;
         }
         .dashboard__rail {
           border-left: 1px solid #232c40;

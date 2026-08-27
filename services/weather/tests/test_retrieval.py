@@ -11,7 +11,11 @@ from pathlib import Path
 
 import pytest
 
-from services.weather.aoi import AreaOfInterest, subset_dataset
+from services.weather.aoi import (
+    REGIONAL_GRID_AOI,
+    AreaOfInterest,
+    subset_dataset,
+)
 from services.weather.retrieval import (
     RetrievalRequest,
     RetrievedArtifact,
@@ -51,6 +55,31 @@ def test_rectilinear_subset_normalizes_longitude_and_descending_latitude() -> (
     assert result.latitude.values.tolist() == [30.0, 20.0]
     assert result.longitude.values.tolist() == [80.0, 90.0, 350.0]
     assert tuple(source.data_vars) == ("temperature", "wind")
+
+
+def test_regional_grid_aoi_selects_native_025_degree_cells() -> None:
+    """The regional envelope retains the expected GFS-native Everest cells."""
+    xr = pytest.importorskip("xarray")
+    source = xr.Dataset(
+        {
+            "u": (
+                ("latitude", "longitude"),
+                [
+                    [float(row * 10 + column) for column in range(7)]
+                    for row in range(7)
+                ],
+            )
+        },
+        coords={
+            "latitude": [29.0, 28.75, 28.5, 28.25, 28.0, 27.75, 27.5],
+            "longitude": [86.0, 86.25, 86.5, 86.75, 87.0, 87.25, 87.5],
+        },
+    )
+
+    result = subset_dataset(source, REGIONAL_GRID_AOI, variables=("u",))
+
+    assert result.latitude.values.tolist() == [28.5, 28.25, 28.0, 27.75, 27.5]
+    assert result.longitude.values.tolist() == [86.5, 86.75, 87.0, 87.25]
 
 
 def test_curvilinear_subset_masks_and_drops_outside_cells() -> None:

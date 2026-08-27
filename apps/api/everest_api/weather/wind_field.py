@@ -23,9 +23,13 @@ _MAX_FRAME_BYTES = 16 * 1024 * 1024
 _MAX_POINTS = 250_000
 _MAX_AXIS = 1_000
 _MAX_CACHE_ENTRIES = 8
-_APPROVED_SOURCE_MODELS = {("ecmwf-ifs", "IFS")}
+_MAX_INDEX_ENTRIES = 512
+_MAX_INDEX_BYTES = 256 * 1024
+_MAX_WIND_COMPONENT = 150.0
+_APPROVED_SOURCE_MODELS = {("ecmwf-ifs", "IFS"), ("noaa-gfs", "GFS")}
 _ALLOWED_FLAGS = {"missing_values"}
 _CACHE: OrderedDict[str, dict[str, Any]] = OrderedDict()
+_INDEX_NAME = "valid-time-index.json"
 
 
 def read_latest_wind_field(  # pylint: disable=too-many-return-statements,too-many-branches
@@ -94,6 +98,167 @@ def read_latest_wind_field(  # pylint: disable=too-many-return-statements,too-ma
     while len(_CACHE) > _MAX_CACHE_ENTRIES:
         _CACHE.popitem(last=False)
     return deepcopy(frame)
+
+
+def read_wind_field_at(  # pylint: disable=too-many-return-statements
+    derived_root: Path | str, valid_time: datetime
+) -> dict[str, Any] | None:
+    """Read an exact local frame from current and forecast-lead storage.
+
+    Selection uses bounded per-root indexes. It performs no directory scan,
+    provider, GRIB, database, or network access and validates the selected frame.
+    """
+    if valid_time.tzinfo is None or valid_time.utcoffset() != timedelta(0):
+        return None
+    expected = valid_time.isoformat().replace("+00:00", "Z")
+    root = _validated_root(derived_root)
+    if root is None:
+        return None
+    candidates: list[tuple[dict[str, str], Path]] = []
+    for storage_root in (root, root / "forecast-leads"):
+        directory = storage_root / "wind-field"
+        try:
+            _reject_symlink_components(directory)
+            entry = _read_index_entry(directory / _INDEX_NAME, expected)
+        except FileNotFoundError:
+            continue
+        except ValueError:
+            return None
+        except OSError:
+            continue
+        if entry is not None:
+            candidates.append((entry, directory))
+    if not candidates:
+        return None
+    entry, directory = max(
+        candidates,
+        key=lambda candidate: _index_rank(candidate[0]),
+    )
+    target = directory / f"{entry['sha256']}.json"
+    frame, _ = _read_digest_frame(target)
+    if frame is None or not _frame_matches_index(frame, expected, entry):
+        return None
+    return deepcopy(frame)
+
+
+def _validated_root(derived_root: Path | str) -> Path | None:
+    root = Path(derived_root)
+    if not root.is_absolute():
+        return None
+    resolved_root = root.resolve(strict=False)
+    excluded_roots = [Path(__file__).resolve().parents[4]]
+    configured_raw_root = os.environ.get("EVEREST_RAW_ROOT")
+    if configured_raw_root:
+        raw_root = Path(configured_raw_root)
+        if raw_root.is_absolute():
+            excluded_roots.append(raw_root.resolve(strict=False))
+    for excluded in excluded_roots:
+        try:
+            resolved_root.relative_to(excluded)
+            return None
+        except ValueError:
+            try:
+                excluded.relative_to(resolved_root)
+                return None
+            except ValueError:
+                pass
+    return root
+
+
+def _read_index_entry(path: Path, expected: str) -> dict[str, str] | None:
+    value = json.loads(
+        _read_regular(path, _MAX_INDEX_BYTES),
+        parse_constant=_bad,
+        object_pairs_hook=_unique_object,
+    )
+    if not isinstance(value, dict) or set(value) != {
+        "entries",
+        "schema_version",
+    }:
+        raise ValueError("invalid wind-field index")
+    if (
+        not isinstance(value["schema_version"], int)
+        or isinstance(value["schema_version"], bool)
+        or value["schema_version"] != 1
+    ):
+        raise ValueError("invalid wind-field index")
+    if not isinstance(value["entries"], dict):
+        raise ValueError("invalid wind-field index")
+    entries = value["entries"]
+    if len(entries) > _MAX_INDEX_ENTRIES:
+        raise ValueError("invalid wind-field index")
+    if any(
+        not _valid_index_entry(valid_time, entry)
+        for valid_time, entry in entries.items()
+    ):
+        raise ValueError("invalid wind-field index")
+    return entries.get(expected)
+
+
+def _valid_index_entry(valid_time: Any, entry: Any) -> bool:
+    return (
+        _timestamp(valid_time) is not None
+        and isinstance(entry, dict)
+        and set(entry) == {"cycle", "model", "sha256", "source"}
+        and _timestamp(entry["cycle"]) is not None
+        and (entry["source"], entry["model"]) in _APPROVED_SOURCE_MODELS
+        and isinstance(entry["sha256"], str)
+        and bool(_DIGEST.fullmatch(entry["sha256"]))
+    )
+
+
+def _index_rank(entry: dict[str, str]) -> tuple[datetime, str, str, str]:
+    cycle = _timestamp(entry["cycle"])
+    if cycle is None:  # The complete index is validated before selection.
+        raise ValueError("invalid wind-field index")
+    return cycle, entry["source"], entry["model"], entry["sha256"]
+
+
+def _frame_matches_index(
+    frame: dict[str, Any],
+    expected: str,
+    entry: dict[str, str],
+) -> bool:
+    return (
+        frame["valid_time"] == expected
+        and frame["cycle"] == entry["cycle"]
+        and frame["source"] == entry["source"]
+        and frame["model"] == entry["model"]
+    )
+
+
+def _read_digest_frame(target: Path) -> tuple[dict[str, Any] | None, int]:
+    digest = target.stem
+    try:
+        payload = _read_regular(target, _MAX_FRAME_BYTES)
+        if hashlib.sha256(payload).hexdigest() != digest:
+            return None, len(payload)
+        cached = _CACHE.get(digest)
+        if cached is not None:
+            _CACHE.move_to_end(digest)
+            return deepcopy(cached), len(payload)
+        frame = json.loads(
+            payload, parse_constant=_bad, object_pairs_hook=_unique_object
+        )
+    except (
+        OSError,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        ValueError,
+        TypeError,
+    ):
+        return None, 0
+    if not _is_public_frame(frame):
+        return None, len(payload)
+    _cache_frame(digest, frame)
+    return deepcopy(frame), len(payload)
+
+
+def _cache_frame(digest: str, frame: dict[str, Any]) -> None:
+    _CACHE[digest] = deepcopy(frame)
+    _CACHE.move_to_end(digest)
+    while len(_CACHE) > _MAX_CACHE_ENTRIES:
+        _CACHE.popitem(last=False)
 
 
 # Exact ``type`` checks intentionally reject bool, an int subclass.
@@ -221,7 +386,11 @@ def _summary(values: list[float | None], operation) -> float | None:
 def _vector(value: Any, size: int) -> list[float | None] | None:
     if not isinstance(value, list) or len(value) != size:
         return None
-    if any(item is not None and not _finite_number(item) for item in value):
+    if any(
+        item is not None
+        and (not _finite_number(item) or abs(item) > _MAX_WIND_COMPONENT)
+        for item in value
+    ):
         return None
     return value
 
@@ -229,9 +398,13 @@ def _vector(value: Any, size: int) -> list[float | None] | None:
 def _axis(value: Any, limit: int) -> list[float] | None:
     if not isinstance(value, list) or not value or len(value) > limit:
         return None
-    if any(not _finite_number(item) for item in value) or len(
-        set(value)
-    ) != len(value):
+    if any(not _finite_number(item) for item in value):
+        return None
+    differences = [right - left for left, right in zip(value, value[1:])]
+    if differences and not (
+        all(difference > 0 for difference in differences)
+        or all(difference < 0 for difference in differences)
+    ):
         return None
     return value
 
@@ -322,4 +495,4 @@ def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return result
 
 
-__all__ = ["read_latest_wind_field"]
+__all__ = ["read_latest_wind_field", "read_wind_field_at"]

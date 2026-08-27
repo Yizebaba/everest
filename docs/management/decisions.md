@@ -3473,3 +3473,94 @@ unexecuted in this step.
 Legal hold and disposition remain prohibited. Writer profiles remain disabled.
 No Block 3, shared/production deployment, or release is authorized. The canary
 and its COMPLIANCE retention are irreversible until 2027-02-21.
+
+## ADR-EV-WIND-001: Regional wind-field contract corrections
+
+**Date:** 2026-08-28
+**Status:** Implemented; review corrections complete (2026-08-28)
+
+Regional grid materialization uses `cfgrib`/`xarray` over retained pressure-
+level GRIB. Direct ecCodes parsing remains the canonical point-ingestion path
+and must not be described as the grid materializer. The exact inclusive WGS 84
+visualization rectangle is `south=27.5`, `north=28.5`, `west=86.4`,
+`east=87.4`, inside but distinct from the approved 100 km project AOI.
+
+The public reader allow-lists the exact pairs `ecmwf-ifs`/`IFS` and
+`noaa-gfs`/`GFS`; mismatched identities are rejected. GFS remains
+connector/configured: no real GFS regional grid has been materialized and
+served, so GFS regional output is not claimed complete. `GET
+/api/weather/wind-field` implements an exact UTC `Z` `valid_time` selector:
+it matches only a materialized frame whose `frame.valid_time` equals the
+requested instant, returns unavailable when that frame is absent, and never
+falls back to latest. Exact-time reads use the bounded
+`valid-time-index.json` written by the materializer (current and
+forecast-lead roots); they do not scan the derived directory.
+
+Frontend seeds are exact retained grid nodes with exact U/V pairs and no
+interpolation. Missing pairs are skipped. The 256-emitter ceiling is a hard
+cap even when a caller supplies a larger option. The 400 hPa field is shown
+on a fixed 7,500 m non-geometric visualization plane, not converted to
+physical altitude. Rendering uses Cesium's public `ParticleSystem` API as
+the complete rendering boundary for this feature.
+
+Hard limits are 1,000 values per axis, 250,000 grid points, 16 MiB serialized
+JSON, 8 validated cache entries, a 512-entry / 256 KiB valid-time index, and
+256 frontend seed emitters, including caller overrides.
+
+## Unrelated incident: Turbopack dev `_buildManifest.js.tmp` ENOENT / HTTP 500 (2026-08-27)
+
+This incident is operational history for the web development server. It is not
+part of ADR-EV-WIND-001 and is not evidence for or against the regional wind
+feature.
+
+**Event count:** 3+ reports across sessions. Retained evidence establishes the
+two multi-writer causes below; it does not establish three clean single-server
+occurrences with one root-cause signature.
+
+**Task/component:** `apps/web` Next.js 15.5.23 dev server (`next dev -p 52148
+--turbopack`) on Windows.
+
+**Symptoms:** `GET /` intermittently returns `Internal Server Error` (500);
+dev-server stderr logs
+
+`
+[Error: ENOENT: no such file or directory, open 'D:\Everest\apps\web\.next\static\development\_buildManifest.js.tmp.<hash>']
+[Error: ENOENT: no such file or directory, open 'D:\Everest\apps\web\.next\server\app\page\build-manifest.json']
+`
+
+**Established causes and remaining hypothesis:**
+
+1. **Two writers on one `.next`:** a second `next dev` (port 52149) was
+   running concurrently with the primary (52148) against the same
+   `apps/web/.next`; both raced to write `_buildManifest.js` via temp files,
+   and one deleted or moved the other's temporary file, causing ENOENT and 500.
+2. **Build/dev clash:** `npm run build` ran while the dev server was live and
+   overwrote dev build-manifest files under the shared `.next`.
+3. **Single-server Turbopack race:** this remains a hypothesis if ENOENT recurs
+   after excluding the two established multi-writer causes. It must not be
+   presented as proven without a clean single-server reproduction and logs.
+
+**Correct next-run procedure (root cause 1/2):** ensure exactly ONE `next dev`
+is running for `apps/web`; never run `npm run build` while the dev server is
+live; when the 500 appears: stop all `next dev`/`start-server.js` node
+processes, `Remove-Item -Recurse apps/web/.next`, then start one dev server
+with `NEXT_PUBLIC_EVEREST_API_BASE_URL=http://localhost:52147` on port 52148.
+
+**Hypothesis-3 fallback (no code change):** if the ENOENT recurs
+with a single dev server, restart the dev server (clean `.next`). Switching
+the dev script off `--turbopack` to `next dev` (webpack) is the durable
+candidate mitigation, not an applied or verified fix. The production build
+path was not established by this incident and is not claimed unaffected here.
+
+**Rollback/cleanup:** the fix is a process/.next cleanup; there is no schema
+or data change. The running API (52147, WSL) and database are unaffected.
+
+### Residual dependency advisories
+
+`npm audit --json` on 2026-08-28 reports 3 high-severity vulnerability entries:
+direct dependency `next` and transitive dependencies `postcss` and `sharp`.
+They are preexisting residual risk and were **not fixed** by the regional wind
+work or the Turbopack cleanup. npm's available remediation is the semver-major
+upgrade to Next `16.3.3`, which requires a separately scoped Next 16 migration,
+compatibility review, build/test/browser verification, and a fresh audit. Do
+not report these advisories as closed until that follow-up is completed.
