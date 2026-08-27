@@ -146,3 +146,37 @@ export interface BackendRiskAssessment {
 export interface RiskResponse {
   risk: BackendRiskAssessment;
 }
+
+/** A bounded, single-level native lon/lat grid returned by the backend. */
+export interface WindFieldFrame {
+  source: string;
+  model: string;
+  cycle: string;
+  valid_time: string;
+  lead_seconds: number;
+  level: number;
+  level_units: string;
+  bounds: {
+    west: number;
+    south: number;
+    east: number;
+    north: number;
+  };
+  latitude: number[];
+  longitude: number[];
+  shape: [latitude: number, longitude: number];
+  order: "latitude_longitude_c";
+  units: string;
+  /** Eastward wind in m/s, flattened with longitude varying fastest. */
+  u: Array<number | null>;
+  /** Northward wind in m/s, using the same layout as `u`. */
+  v: Array<number | null>;
+  minimum: { u: number | null; v: number | null };
+  maximum: { u: number | null; v: number | null };
+  quality_flags: string[];
+  schema_version: 1;
+}
+
+export type WindFieldResponse =
+  | { status: "available"; reason?: never; frame: WindFieldFrame }
+  | { status: "unavailable"; reason: string; frame: null };

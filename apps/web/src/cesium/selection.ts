@@ -1,23 +1,70 @@
-export type SceneSelection =
-  | { kind: "weather"; recordKey: string }
-  | { kind: "camp"; campId: string }
-  | { kind: "route"; routeId: string };
+import type { CanonicalWeatherRecord, EverestCamp } from "@/api/types";
 
-export function sceneSelectionFromEntityId(
-  entityId: string,
-  weatherIds: ReadonlySet<string>,
+export type RouteCoordinate = [number, number];
+
+export type SceneSelection =
+  | { kind: "weather"; record: CanonicalWeatherRecord }
+  | { kind: "camp"; camp: EverestCamp }
+  | {
+      kind: "route";
+      route: RouteCoordinate[];
+      coordinate: RouteCoordinate;
+    };
+
+export interface SceneEntitySelections {
+  weather: ReadonlyMap<string, CanonicalWeatherRecord>;
+  camps: ReadonlyMap<string, EverestCamp>;
+  routes: ReadonlyMap<string, RouteCoordinate[]>;
+}
+
+export interface PickCoordinate {
+  latitude: number;
+  longitude: number;
+}
+
+export function nearestRouteVertex(
+  route: RouteCoordinate[],
+  latitude: number,
+  longitude: number,
+): RouteCoordinate | null {
+  let nearest: RouteCoordinate | null = null;
+  let nearestDistance = Number.POSITIVE_INFINITY;
+  for (const vertex of route) {
+    const distance = (vertex[0] - latitude) ** 2 + (vertex[1] - longitude) ** 2;
+    if (distance < nearestDistance) {
+      nearest = vertex;
+      nearestDistance = distance;
+    }
+  }
+  return nearest;
+}
+
+export function sceneSelectionFromEntity(
+  entityId: string | null,
+  entities: SceneEntitySelections,
+  pickedCoordinate?: PickCoordinate,
 ): SceneSelection | null {
-  if (weatherIds.has(entityId)) {
-    return { kind: "weather", recordKey: entityId };
+  if (entityId === null) {
+    return null;
   }
-  if (entityId.startsWith("osm-camp-")) {
-    return { kind: "camp", campId: entityId };
+  const weather = entities.weather.get(entityId);
+  if (weather) {
+    return { kind: "weather", record: weather };
   }
-  if (
-    entityId === "osm-south-col-route" ||
-    entityId.startsWith("route-elevation-")
-  ) {
-    return { kind: "route", routeId: entityId };
+  const camp = entities.camps.get(entityId);
+  if (camp) {
+    return { kind: "camp", camp };
   }
-  return null;
+  const route = entities.routes.get(entityId);
+  if (!route || route.length === 0) {
+    return null;
+  }
+  const coordinate = pickedCoordinate
+    ? nearestRouteVertex(
+        route,
+        pickedCoordinate.latitude,
+        pickedCoordinate.longitude,
+      )
+    : route[0];
+  return coordinate ? { kind: "route", route, coordinate } : null;
 }

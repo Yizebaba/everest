@@ -14,6 +14,8 @@ import type {
   SourceFact,
   SourcesResponse,
   TerrainTileResponse,
+  WindFieldFrame,
+  WindFieldResponse,
 } from "./types";
 
 const RISK_LEVELS = new Set(["go", "caution", "block", "unknown"]);
@@ -47,6 +49,8 @@ type CoreField =
   | "precipitation"
   | "visibility";
 const UTC_Z_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/;
+const MAX_WIND_AXIS_LENGTH = 1_000;
+const MAX_WIND_VALUES = 250_000;
 
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
@@ -222,6 +226,146 @@ export function validateCurrent(payload: unknown): CurrentResponse {
 
 export function validateForecast(payload: unknown): ForecastResponse {
   return validateRecords(payload);
+}
+
+function validateWindFieldFrame(payload: unknown): WindFieldFrame {
+  if (
+    typeof payload !== "object" ||
+    payload === null ||
+    Array.isArray(payload)
+  ) {
+    throw new Error("wind frame must be an object");
+  }
+  const frame = payload as Record<string, unknown>;
+  if (typeof frame.source !== "string" || frame.source.length === 0) {
+    throw new Error("wind frame source invalid");
+  }
+  if (typeof frame.model !== "string" || frame.model.length === 0) {
+    throw new Error("wind frame model invalid");
+  }
+  if (!isUtcZ(frame.cycle) || !isUtcZ(frame.valid_time)) {
+    throw new Error("wind frame time invalid");
+  }
+  if (
+    !Number.isInteger(frame.lead_seconds) ||
+    (frame.lead_seconds as number) < 0 ||
+    Date.parse(frame.cycle as string) +
+      (frame.lead_seconds as number) * 1000 !==
+      Date.parse(frame.valid_time as string) ||
+    !isFiniteNumber(frame.level) ||
+    typeof frame.level_units !== "string" ||
+    frame.level_units.length === 0 ||
+    typeof frame.units !== "string" ||
+    frame.units.length === 0
+  ) {
+    throw new Error("wind frame identity invalid");
+  }
+  if (frame.schema_version !== 1 || frame.order !== "latitude_longitude_c") {
+    throw new Error("wind frame schema invalid");
+  }
+
+  const latitude = frame.latitude;
+  const longitude = frame.longitude;
+  if (
+    !Array.isArray(latitude) ||
+    !Array.isArray(longitude) ||
+    latitude.length < 1 ||
+    longitude.length < 1 ||
+    latitude.length > MAX_WIND_AXIS_LENGTH ||
+    longitude.length > MAX_WIND_AXIS_LENGTH ||
+    !latitude.every(isFiniteNumber) ||
+    !longitude.every(isFiniteNumber)
+  ) {
+    throw new Error("wind frame dimensions out of bounds");
+  }
+  const valueCount = longitude.length * latitude.length;
+  if (valueCount > MAX_WIND_VALUES) {
+    throw new Error("wind frame dimensions out of bounds");
+  }
+  if (
+    !Array.isArray(frame.shape) ||
+    frame.shape.length !== 2 ||
+    frame.shape[0] !== latitude.length ||
+    frame.shape[1] !== longitude.length
+  ) {
+    throw new Error("wind frame shape invalid");
+  }
+
+  const bounds = frame.bounds as Record<string, unknown> | undefined;
+  const west = bounds?.west;
+  const south = bounds?.south;
+  const east = bounds?.east;
+  const north = bounds?.north;
+  if (
+    !isFiniteNumber(west) ||
+    !isFiniteNumber(south) ||
+    !isFiniteNumber(east) ||
+    !isFiniteNumber(north) ||
+    west < -180 ||
+    east > 180 ||
+    south < -90 ||
+    north > 90 ||
+    west >= east ||
+    south > north ||
+    Math.min(...latitude) < south ||
+    Math.max(...latitude) > north ||
+    Math.min(...longitude) < west ||
+    Math.max(...longitude) > east
+  ) {
+    throw new Error("wind frame bounds invalid");
+  }
+
+  for (const component of ["u", "v"] as const) {
+    const values = frame[component];
+    if (!Array.isArray(values) || values.length !== valueCount) {
+      throw new Error("wind arrays must match frame dimensions");
+    }
+    if (!values.every((value) => value === null || isFiniteNumber(value))) {
+      throw new Error(`${component} must contain finite numbers or null`);
+    }
+  }
+  for (const summary of ["minimum", "maximum"] as const) {
+    const values = frame[summary] as Record<string, unknown> | undefined;
+    if (
+      !values ||
+      ![values.u, values.v].every(
+        (value) => value === null || isFiniteNumber(value),
+      )
+    ) {
+      throw new Error(`wind frame ${summary} invalid`);
+    }
+  }
+  if (
+    !Array.isArray(frame.quality_flags) ||
+    !frame.quality_flags.every((flag) => typeof flag === "string")
+  ) {
+    throw new Error("wind frame quality_flags invalid");
+  }
+  return frame as unknown as WindFieldFrame;
+}
+
+export function validateWindField(payload: unknown): WindFieldResponse {
+  if (
+    typeof payload !== "object" ||
+    payload === null ||
+    Array.isArray(payload)
+  ) {
+    throw new Error("wind field response must be an object");
+  }
+  const response = payload as Record<string, unknown>;
+  if (response.status === "unavailable") {
+    if (response.frame !== null || typeof response.reason !== "string") {
+      throw new Error("wind field unavailable response invalid");
+    }
+    return response as WindFieldResponse;
+  }
+  if (response.status !== "available") {
+    throw new Error("wind field status invalid");
+  }
+  return {
+    status: "available",
+    frame: validateWindFieldFrame(response.frame),
+  };
 }
 
 export function validateRisk(payload: unknown): RiskResponse {

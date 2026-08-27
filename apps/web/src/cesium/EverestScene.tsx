@@ -43,11 +43,15 @@ import "cesium/Build/Cesium/Widgets/widgets.css";
 
 import type { CanonicalWeatherRecord } from "@/api/types";
 import type { EverestCamp } from "@/api/types";
+import type { WindFieldFrame } from "@/api/types";
+import { getWindField } from "@/api/client";
 import { t, type Locale } from "@/i18n/t";
 import {
-  sceneSelectionFromEntityId,
+  sceneSelectionFromEntity,
+  type SceneEntitySelections,
   type SceneSelection,
 } from "@/cesium/selection";
+import { detectWindFieldCapabilities, WindFieldLayer } from "@/cesium/wind";
 import {
   AOI_CENTER,
   compassPoint,
@@ -134,6 +138,11 @@ export function EverestScene({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewerRef = useRef<Viewer | null>(null);
   const entityByRecord = useRef(new Map<string, Entity>());
+  const sceneEntities = useRef<SceneEntitySelections>({
+    weather: new Map(),
+    camps: new Map(),
+    routes: new Map(),
+  });
   const satelliteLayerRef = useRef<ImageryLayer | null>(null);
   const onSelectRef = useRef(onSelectRecord);
   onSelectRef.current = onSelectRecord;
@@ -142,6 +151,9 @@ export function EverestScene({
 
   const [showSatellite, setShowSatellite] = useState(false);
   const [pickInfo, setPickInfo] = useState<string | null>(null);
+  const [windFieldFrame, setWindFieldFrame] = useState<WindFieldFrame | null>(
+    null,
+  );
   const [webglOk] = useState(() => {
     try {
       const canvas = document.createElement("canvas");
@@ -150,6 +162,26 @@ export function EverestScene({
       return false;
     }
   });
+
+  useEffect(() => {
+    let cancelled = false;
+    void getWindField()
+      .then((response) => {
+        if (!cancelled) {
+          setWindFieldFrame(
+            response.status === "available" ? response.frame : null,
+          );
+        }
+      })
+      .catch(() => {
+        // A missing, unavailable, or invalid frame is an expected fail-closed
+        // state. The lightweight record ParticleSystem remains active.
+        if (!cancelled) setWindFieldFrame(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!webglOk) {
@@ -304,6 +336,7 @@ export function EverestScene({
 
   useEffect(() => {
     const viewer = viewerRef.current;
+    const selections = sceneEntities.current;
     if (!viewer) {
       return;
     }
@@ -312,6 +345,7 @@ export function EverestScene({
       viewer.entities.remove(existing);
     }
     if (route.length < 2) {
+      selections.routes = new Map();
       return;
     }
     const positions = route.map(([latitude, longitude]) =>
@@ -328,7 +362,9 @@ export function EverestScene({
         }),
       }),
     );
+    selections.routes = new Map([["osm-south-col-route", route]]);
     return () => {
+      selections.routes = new Map();
       const entity = viewer.entities.getById("osm-south-col-route");
       if (viewerRef.current === viewer && entity)
         viewer.entities.remove(entity);
@@ -440,6 +476,7 @@ export function EverestScene({
 
   useEffect(() => {
     const viewer = viewerRef.current;
+    const selections = sceneEntities.current;
     if (!viewer) {
       return;
     }
@@ -450,6 +487,7 @@ export function EverestScene({
       removeEntityTree(viewer, existing);
     }
     if (camps.length === 0 && !summit) {
+      selections.camps = new Map();
       return;
     }
     const campGroup = new Entity({
@@ -457,6 +495,7 @@ export function EverestScene({
     });
     viewer.entities.add(campGroup);
     const marked: EverestCamp[] = summit ? [...camps, summit] : camps;
+    const campSelections = new Map<string, EverestCamp>();
     for (const camp of marked) {
       const isSummit = summit !== null && camp === summit;
       const hasElevation =
@@ -496,9 +535,10 @@ export function EverestScene({
           lines.push(`vis ${Math.round(weather.visibility)} m`);
         }
       }
+      const entityId = `osm-camp-${camp.osm_ref ?? camp.name}`;
       viewer.entities.add(
         new Entity({
-          id: `osm-camp-${camp.name}`,
+          id: entityId,
           parent: campGroup,
           position: Cartesian3.fromDegrees(
             camp.longitude,
@@ -536,8 +576,11 @@ export function EverestScene({
           description: `${camp.name} (OSM ${camp.osm_ref ?? "—"})`,
         }),
       );
+      campSelections.set(entityId, camp);
     }
+    selections.camps = campSelections;
     return () => {
+      selections.camps = new Map();
       if (viewerRef.current === viewer) {
         removeEntityTree(viewer, campGroup);
       }
@@ -546,6 +589,7 @@ export function EverestScene({
 
   useEffect(() => {
     const viewer = viewerRef.current;
+    const selections = sceneEntities.current;
     if (!viewer) {
       return;
     }
@@ -681,7 +725,37 @@ export function EverestScene({
         );
       }
     }
+    selections.weather = new Map(
+      records.map((record) => [recordKey(record), record]),
+    );
+    return () => {
+      selections.weather = new Map();
+    };
   }, [records]);
+
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer || !windFieldFrame) return;
+    if (
+      windFieldFrame.u.some((value) => value === null) ||
+      windFieldFrame.v.some((value) => value === null)
+    ) {
+      // Missing source cells remain missing. Do not synthesize vectors merely
+      // to make a texture complete; retain the record-particle fallback.
+      return;
+    }
+
+    const capabilities = detectWindFieldCapabilities(viewer.scene.canvas);
+    const layer = new WindFieldLayer(
+      viewer.scene,
+      windFieldFrame,
+      capabilities,
+    );
+
+    return () => {
+      layer.destroy();
+    };
+  }, [windFieldFrame]);
 
   useEffect(() => {
     const viewer = viewerRef.current;
@@ -834,15 +908,31 @@ export function EverestScene({
         return;
       }
       const entityId = String(picked.id.id);
-      const selection = sceneSelectionFromEntityId(
+      const depthPosition = viewer.scene.pickPositionSupported
+        ? viewer.scene.pickPosition(movement.position)
+        : undefined;
+      const ray = depthPosition
+        ? undefined
+        : viewer.camera.getPickRay(movement.position);
+      const pickedPosition =
+        depthPosition ??
+        (ray ? viewer.scene.globe.pick(ray, viewer.scene) : undefined);
+      const cartographic = pickedPosition
+        ? Cartographic.fromCartesian(pickedPosition)
+        : null;
+      const selection = sceneSelectionFromEntity(
         entityId,
-        new Set(entityByRecord.current.keys()),
+        sceneEntities.current,
+        cartographic
+          ? {
+              latitude: CesiumMath.toDegrees(cartographic.latitude),
+              longitude: CesiumMath.toDegrees(cartographic.longitude),
+            }
+          : undefined,
       );
       onSceneSelectRef.current?.(selection);
       const record =
-        selection?.kind === "weather"
-          ? records.find((r) => recordKey(r) === selection.recordKey)
-          : undefined;
+        selection?.kind === "weather" ? selection.record : undefined;
       onSelectRef.current?.(record ?? null);
     }, ScreenSpaceEventType.LEFT_CLICK);
 

@@ -17,10 +17,12 @@ import { CurrentWeatherPanel } from "@/components/panels/CurrentWeatherPanel";
 import { ForecastPanel } from "@/components/panels/ForecastPanel";
 import { ModelDisagreement } from "@/components/panels/ModelDisagreement";
 import { ProvenancePopover } from "@/components/panels/ProvenancePopover";
+import { SceneSelectionPanel } from "@/components/panels/SceneSelectionPanel";
 import { SourcesPanel } from "@/components/panels/SourcesPanel";
 import { SummitWindowPanel } from "@/components/panels/SummitWindowPanel";
 import { VerticalProfilePanel } from "@/components/panels/VerticalProfilePanel";
 import type { CanonicalWeatherRecord } from "@/api/types";
+import type { SceneSelection } from "@/cesium/selection";
 import { t, type Locale } from "@/i18n/t";
 import { AOI_CENTER } from "@/lib/geo";
 import { selectMapRecords } from "@/lib/weatherFlow";
@@ -36,6 +38,7 @@ export default function Page(): React.JSX.Element {
     null,
   );
   const [activeTime, setActiveTime] = useState<string | null>(null);
+  const [selection, setSelection] = useState<SceneSelection | null>(null);
   const [locale, setLocale] = useState<Locale>("en");
 
   const current = useApiFetch(() => getCurrent());
@@ -82,12 +85,25 @@ export default function Page(): React.JSX.Element {
             summit={everestRoute.data?.summit ?? null}
             locale={locale}
             onSelectRecord={setProvenance}
+            onSelect={setSelection}
           />
         </div>
         <aside
           className="dashboard__rail"
           aria-label={t("panels.dataPanels", locale)}
         >
+          <SceneSelectionPanel
+            selection={selection}
+            records={records}
+            camps={everestRoute.data?.camps ?? []}
+            summit={everestRoute.data?.summit ?? null}
+            risk={risk.data?.risk ?? null}
+            onSelectCamp={(camp) => {
+              setSelection({ kind: "camp", camp });
+              setProvenance(null);
+            }}
+            locale={locale}
+          />
           <SummitWindowPanel
             current={current}
             forecast={forecast}

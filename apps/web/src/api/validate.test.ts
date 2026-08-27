@@ -1,6 +1,105 @@
 import { describe, expect, it } from "vitest";
 
-import { validateEverestRoute, validateRisk } from "./validate";
+import {
+  validateEverestRoute,
+  validateRisk,
+  validateWindField,
+} from "./validate";
+
+const WIND_FIELD = {
+  status: "available",
+  frame: {
+    source: "ecmwf-ifs",
+    model: "IFS",
+    cycle: "2026-08-27T00:00:00Z",
+    valid_time: "2026-08-27T06:00:00Z",
+    lead_seconds: 21600,
+    level: 400,
+    level_units: "hPa",
+    bounds: { west: 86.8, south: 27.85, east: 87.05, north: 28.05 },
+    latitude: [27.85, 28.05],
+    longitude: [86.8, 87.05],
+    shape: [2, 2],
+    order: "latitude_longitude_c",
+    units: "m s-1",
+    u: [1, 2, 3, 4],
+    v: [4, 3, 2, 1],
+    minimum: { u: 1, v: 1 },
+    maximum: { u: 4, v: 4 },
+    quality_flags: [],
+    schema_version: 1,
+  },
+};
+
+describe("validateWindField", () => {
+  it("accepts a bounded, flattened wind frame", () => {
+    expect(validateWindField(WIND_FIELD)).toEqual(WIND_FIELD);
+  });
+
+  it("accepts an explicit unavailable envelope", () => {
+    const unavailable = {
+      status: "unavailable",
+      reason: "not_configured",
+      frame: null,
+    };
+    expect(validateWindField(unavailable)).toEqual(unavailable);
+  });
+
+  it("rejects dimensions whose product does not match flattened arrays", () => {
+    expect(() =>
+      validateWindField({
+        ...WIND_FIELD,
+        frame: { ...WIND_FIELD.frame, shape: [2, 3] },
+      }),
+    ).toThrow("wind frame shape invalid");
+  });
+
+  it("rejects flattened arrays whose length does not match the shape", () => {
+    expect(() =>
+      validateWindField({
+        ...WIND_FIELD,
+        frame: { ...WIND_FIELD.frame, v: [1, 2, 3] },
+      }),
+    ).toThrow("wind arrays must match frame dimensions");
+  });
+
+  it("rejects non-finite flattened values", () => {
+    expect(() =>
+      validateWindField({
+        ...WIND_FIELD,
+        frame: { ...WIND_FIELD.frame, u: [1, 2, Number.NaN, 4] },
+      }),
+    ).toThrow("u must contain finite numbers or null");
+  });
+
+  it("rejects unbounded frame dimensions before allocating GPU resources", () => {
+    expect(() =>
+      validateWindField({
+        ...WIND_FIELD,
+        frame: {
+          ...WIND_FIELD.frame,
+          latitude: [28],
+          longitude: Array.from({ length: 1001 }, (_, index) => index / 10),
+          shape: [1, 1001],
+          u: [],
+          v: [],
+        },
+      }),
+    ).toThrow("wind frame dimensions out of bounds");
+  });
+
+  it("rejects inverted geographic bounds", () => {
+    expect(() =>
+      validateWindField({
+        ...WIND_FIELD,
+        frame: {
+          ...WIND_FIELD.frame,
+          bounds: { ...WIND_FIELD.frame.bounds, east: 86.7 },
+        },
+      }),
+    ).toThrow("wind frame bounds invalid");
+  });
+});
 
 describe("validateEverestRoute", () => {
   it("accepts a valid route payload", () => {
