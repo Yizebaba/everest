@@ -10,6 +10,7 @@ EnvironmentFile=/root/.everest/db.env
 Environment=PYTHONPATH=/mnt/d/Everest:/mnt/d/Everest/apps/api:/mnt/d/Everest/packages/weather_ingestion_contract
 Environment=EVEREST_API_PORT=52147
 Environment=EVEREST_DB_HOST=127.0.0.1
+Environment=EVEREST_WIND_FIELD_DERIVED_ROOT=/var/lib/everest/derived
 # The DSN is composed by everest_api.persistence.database.resolve_database_url()
 # from EVEREST_DB_* in the EnvironmentFile. Do not inline a URL here: an inlined
 # one is how the API and the scheduler drifted onto two different databases.

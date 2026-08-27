@@ -30,6 +30,7 @@ from everest_api.sources.models import (
 )
 from everest_api.weather.models import WeatherRecordModel
 from everest_api.weather.service import WeatherQueryService
+from everest_api.weather.wind_field import read_latest_wind_field
 
 
 _CORRELATION_HEADER = "X-Correlation-ID"
@@ -124,11 +125,12 @@ UtcDateTime = Annotated[datetime, AfterValidator(_require_utc)]
 def create_app(
     session_factory: Callable[[], Session],
     cors_origins: Sequence[str] | None = None,
+    wind_field_root: os.PathLike[str] | str | None = None,
 ) -> FastAPI:
-    """Create API routes whose only data dependency is PostgreSQL."""
+    """Create routes over persisted database or configured derived data."""
     # Route handlers remain colocated in this small REST adapter; their local
     # names intentionally count toward the factory's local-variable total.
-    # pylint: disable=too-many-locals
+    # pylint: disable=too-many-locals,too-many-statements
     app = FastAPI()
     app.add_middleware(
         CORSMiddleware,
@@ -239,6 +241,27 @@ def create_app(
         """Echo a caller-provided correlation ID without generating sensitive data."""
         if value:
             response.headers["X-Correlation-ID"] = value
+
+    @app.get("/api/weather/wind-field")
+    def wind_field() -> dict[str, object]:
+        """Return only a precomputed local frame; never parse or fetch on GET."""
+        configured_root = wind_field_root or os.environ.get(
+            "EVEREST_WIND_FIELD_DERIVED_ROOT"
+        )
+        if configured_root is None:
+            return {
+                "status": "unavailable",
+                "reason": "not_configured",
+                "frame": None,
+            }
+        frame = read_latest_wind_field(configured_root)
+        if frame is None:
+            return {
+                "status": "unavailable",
+                "reason": "no_valid_materialized_frame",
+                "frame": None,
+            }
+        return {"status": "available", "frame": frame}
 
     @app.get("/api/weather/current")
     def current(

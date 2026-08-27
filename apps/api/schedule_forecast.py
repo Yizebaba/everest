@@ -40,6 +40,7 @@ from services.weather.contract import (  # noqa: E402
     WeatherRecord,
     validate_record,
 )
+from services.weather.aoi import AreaOfInterest, subset_dataset  # noqa: E402
 from services.weather.ecmwf import (  # noqa: E402
     EcmwfOpenDataConnector,
     normalize_messages as normalize_ifs,
@@ -49,9 +50,14 @@ from services.weather.ecmwf.pressure import (  # noqa: E402
     normalize_pressure_levels,
     parse_pressure_messages,
 )
+from services.weather.retrieval import open_grib_dataset  # noqa: E402
 from services.weather.route_profile import (  # noqa: E402
     ROUTE_PROFILE_ELEVATIONS,
     interpolate_route_profiles,
+)
+from services.weather.wind_field import (  # noqa: E402
+    build_wind_field_frame,
+    materialize_wind_field_frame,
 )
 from weather_ingestion_contract import (  # noqa: E402
     CanonicalRecordInput,
@@ -70,6 +76,16 @@ PRESSURE_LEVELS = ("850", "700", "600", "500", "400", "300")
 # lead costs ~15 MB of byte-range downloads, and a 6h vertical cadence is enough
 # to resolve a summit window.
 PRESSURE_LEADS = tuple(range(0, 73, 6))
+# WGS84 envelope of the approved 100 km geodesic AOI around the project
+# center. These are the west/south/east/north extrema at cardinal bearings;
+# the source grid is clipped to this envelope without interpolation.
+WIND_FIELD_AOI = AreaOfInterest(
+    south=27.085630960770477,
+    north=28.890370597450392,
+    west=85.90876137741341,
+    east=87.94179862258659,
+)
+WIND_FIELD_LEVEL_HPA = 400.0
 
 
 def _env_db_url() -> str:
@@ -169,9 +185,7 @@ def _ingest_ifs(service, cycle: datetime) -> int:
             precipitation=record.precipitation,
             visibility=record.visibility,
             forecast_cycle=record.forecast.cycle,
-            forecast_lead_seconds=int(
-                record.forecast.lead_time.total_seconds()
-            ),
+            forecast_lead_seconds=int(record.forecast.lead_time.total_seconds()),
         )
         service.ingest(descriptor, (canonical,))
         count += 1
@@ -237,9 +251,7 @@ def _pressure_quality_flags(record) -> tuple[str, ...]:
         visibility=None,
         source=record.source,
         model=record.model,
-        forecast=ForecastIdentity(
-            record.cycle, timedelta(seconds=record.lead_seconds)
-        ),
+        forecast=ForecastIdentity(record.cycle, timedelta(seconds=record.lead_seconds)),
     )
     return tuple(sorted(validate_record(probe)))
 
@@ -287,9 +299,7 @@ def _ingest_route_profiles(service, descriptor, records) -> int:
         by_time.setdefault(record.timestamp, []).append(record)
     for timestamp, column in sorted(by_time.items()):
         anchor = column[0]
-        for sample in interpolate_route_profiles(
-            column, ROUTE_PROFILE_ELEVATIONS
-        ):
+        for sample in interpolate_route_profiles(column, ROUTE_PROFILE_ELEVATIONS):
             canonical = CanonicalRecordInput(
                 "forecast",
                 timestamp,
@@ -323,7 +333,64 @@ def _ingest_route_profiles(service, descriptor, records) -> int:
     return count
 
 
-def _ingest_ifs_pressure(service, cycle: datetime, leads=PRESSURE_LEADS) -> int:
+def _materialize_ifs_wind_field(
+    artifact_path: Path,
+    cycle: datetime,
+    lead_hours: int,
+    *,
+    derived_root: str | Path | None = None,
+    opener=None,
+):
+    """Publish one native-grid 400 hPa U/V frame from retained GRIB.
+
+    This path is optional and never invents a field from point records. The
+    retained pressure artifact is decoded with cfgrib, clipped to the approved
+    AOI envelope, loaded before the source Dataset closes, and materialized to
+    external derived storage. No provider call occurs here.
+    """
+    # The explicit locals preserve the data-contract fields at this trust
+    # boundary; collapsing them would obscure source versus derived metadata.
+    # pylint: disable=too-many-locals
+    import os
+
+    root = derived_root or os.environ.get("EVEREST_WIND_FIELD_DERIVED_ROOT")
+    if not root:
+        return None
+    with open_grib_dataset(
+        artifact_path,
+        filter_by_keys={
+            "typeOfLevel": "isobaricInhPa",
+            "level": int(WIND_FIELD_LEVEL_HPA),
+        },
+        opener=opener,
+    ) as dataset:
+        subset = subset_dataset(
+            dataset,
+            WIND_FIELD_AOI,
+            variables=("u", "v"),
+        ).load()
+        frame = build_wind_field_frame(
+            subset,
+            source="ecmwf-ifs",
+            model="IFS",
+            cycle=cycle,
+            valid_time=cycle + timedelta(hours=lead_hours),
+            lead=timedelta(hours=lead_hours),
+            level=WIND_FIELD_LEVEL_HPA,
+            level_units="hPa",
+            bounds=(
+                WIND_FIELD_AOI.west,
+                WIND_FIELD_AOI.south,
+                WIND_FIELD_AOI.east,
+                WIND_FIELD_AOI.north,
+            ),
+        )
+    return materialize_wind_field_frame(frame, root)
+
+
+def _ingest_ifs_pressure(  # pylint: disable=too-many-locals
+    service, cycle: datetime, leads=PRESSURE_LEADS
+) -> int:
     """Ingest the vertical profile at every requested lead, not just lead 0.
 
     Fetching only lead 0 gave a vertical snapshot at cycle time and no vertical
@@ -348,6 +415,15 @@ def _ingest_ifs_pressure(service, cycle: datetime, leads=PRESSURE_LEADS) -> int:
         artifact_path.parent.mkdir(parents=True, exist_ok=True)
         if not artifact_path.exists():
             artifact_path.write_bytes(payload)
+        try:
+            wind_path = _materialize_ifs_wind_field(artifact_path, cycle, lead)
+            if wind_path is not None:
+                print(f"  wind field +{lead}h: {wind_path.name}")
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            # Wind visualization is an additive derived product. A decoder or
+            # materialization failure must not roll back canonical weather that
+            # was already retrieved and can still serve every existing API.
+            print(f"  wind field +{lead}h unavailable ({exc}); continuing")
         descriptor = RawArtifactDescriptor(
             "ecmwf-ifs",
             "ifs-pressure",
@@ -428,13 +504,9 @@ def _run_ifs_with_fallback(service) -> int:
             raise
         except Exception as exc:  # pylint: disable=broad-exception-caught
             last_error = exc
-            print(
-                f"cycle {cycle.isoformat()} unavailable ({exc}); trying previous"
-            )
+            print(f"cycle {cycle.isoformat()} unavailable ({exc}); trying previous")
             cycle = cycle - timedelta(hours=6)
-    raise RuntimeError(
-        "no recent IFS cycle available in the last 48 h"
-    ) from last_error
+    raise RuntimeError("no recent IFS cycle available in the last 48 h") from last_error
 
 
 class _EmptyIfsCycle(RuntimeError):
