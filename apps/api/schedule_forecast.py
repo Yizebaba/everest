@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 import math
+import os
 import sys
 from pathlib import Path
 
@@ -70,7 +71,7 @@ from weather_ingestion_contract import (  # noqa: E402
 
 LAT = 27.98806
 LON = 86.92528
-RAW_ROOT = Path("/tmp/everest-schedule-raw")
+RAW_ROOT = Path(os.environ.get("EVEREST_RAW_ROOT", "/tmp/everest-schedule-raw"))
 LEADS_IFS = list(range(0, 73, 3))  # 3h steps
 # 400 hPa (~7600 m) and 300 hPa (~9800 m) bracket the 8848 m summit, so the
 # summit level can be interpolated instead of guessed; 850-500 cover the route
@@ -130,7 +131,9 @@ def _ingest_ifs(service, cycle: datetime) -> int | ProviderRunResult:
     failed_leads: list[FailedLead] = []
     for lead in LEADS_IFS:
         try:
-            orography = _ingest_ifs_lead(service, connector, cycle, lead, orography)
+            orography = _ingest_ifs_lead(
+                service, connector, cycle, lead, orography
+            )
             count += 1
         except Exception as error:  # pylint: disable=broad-exception-caught
             if lead == 0 and count == 0:
@@ -251,7 +254,9 @@ def _pressure_quality_flags(record) -> tuple[str, ...]:
         visibility=None,
         source=record.source,
         model=record.model,
-        forecast=ForecastIdentity(record.cycle, timedelta(seconds=record.lead_seconds)),
+        forecast=ForecastIdentity(
+            record.cycle, timedelta(seconds=record.lead_seconds)
+        ),
     )
     return tuple(sorted(validate_record(probe)))
 
@@ -299,7 +304,9 @@ def _ingest_route_profiles(service, descriptor, records) -> int:
         by_time.setdefault(record.timestamp, []).append(record)
     for timestamp, column in sorted(by_time.items()):
         anchor = column[0]
-        for sample in interpolate_route_profiles(column, ROUTE_PROFILE_ELEVATIONS):
+        for sample in interpolate_route_profiles(
+            column, ROUTE_PROFILE_ELEVATIONS
+        ):
             canonical = CanonicalRecordInput(
                 "forecast",
                 timestamp,
@@ -351,8 +358,6 @@ def _materialize_ifs_wind_field(
     # The explicit locals preserve the data-contract fields at this trust
     # boundary; collapsing them would obscure source versus derived metadata.
     # pylint: disable=too-many-locals
-    import os
-
     root = derived_root or os.environ.get("EVEREST_WIND_FIELD_DERIVED_ROOT")
     if not root:
         return None
@@ -386,7 +391,9 @@ def _materialize_ifs_wind_field(
             ),
         )
     target_root = root if lead_hours == 0 else Path(root) / "forecast-leads"
-    return materialize_wind_field_frame(frame, target_root, excluded_roots=(RAW_ROOT,))
+    return materialize_wind_field_frame(
+        frame, target_root, excluded_roots=(RAW_ROOT,)
+    )
 
 
 def _ingest_ifs_pressure(  # pylint: disable=too-many-locals
@@ -406,14 +413,18 @@ def _ingest_ifs_pressure(  # pylint: disable=too-many-locals
         try:
             payload = _fetch_pressure(cycle, lead)
             messages = parse_pressure_messages(payload)
-            records = normalize_pressure_levels(messages, LAT, LON, PRESSURE_LEVELS)
+            records = normalize_pressure_levels(
+                messages, LAT, LON, PRESSURE_LEVELS
+            )
             digest = hashlib.sha256(payload).hexdigest()
             artifact_path = RAW_ROOT / "ecmwf-ifs" / digest / "pressure.grib2"
             artifact_path.parent.mkdir(parents=True, exist_ok=True)
             if not artifact_path.exists():
                 artifact_path.write_bytes(payload)
             try:
-                wind_path = _materialize_ifs_wind_field(artifact_path, cycle, lead)
+                wind_path = _materialize_ifs_wind_field(
+                    artifact_path, cycle, lead
+                )
                 if wind_path is not None:
                     print(f"  wind field +{lead}h: {wind_path.name}")
             except Exception:  # pylint: disable=broad-exception-caught
@@ -459,7 +470,10 @@ def _ingest_ifs_pressure(  # pylint: disable=too-many-locals
                 count += 1
             profiles = _ingest_route_profiles(service, descriptor, records)
             count += profiles
-            print(f"  pressure +{lead}h: {len(records)} levels, " f"{profiles} camps")
+            print(
+                f"  pressure +{lead}h: {len(records)} levels, "
+                f"{profiles} camps"
+            )
         except Exception as error:  # pylint: disable=broad-exception-caught
             if lead == 0 and count == 0:
                 raise
@@ -483,7 +497,9 @@ def _run_ifs_with_fallback(service) -> int | ProviderRunResult:
             surface = _as_provider_result(_ingest_ifs(service, cycle))
             print(f"ingested {surface.records_ingested} surface leads")
             try:
-                pressure = _as_provider_result(_ingest_ifs_pressure(service, cycle))
+                pressure = _as_provider_result(
+                    _ingest_ifs_pressure(service, cycle)
+                )
             except Exception as error:  # pylint: disable=broad-exception-caught
                 if surface.records_ingested == 0:
                     raise
@@ -500,14 +516,20 @@ def _run_ifs_with_fallback(service) -> int | ProviderRunResult:
                     f"IFS cycle {cycle.isoformat()} yielded no records"
                 )
             failed_leads = surface.failed_leads + pressure.failed_leads
-            return ProviderRunResult(total, failed_leads) if failed_leads else total
+            return (
+                ProviderRunResult(total, failed_leads)
+                if failed_leads
+                else total
+            )
         except _EmptyIfsCycle:
             raise
         except Exception as exc:  # pylint: disable=broad-exception-caught
             last_error = exc
             print(f"cycle {cycle.isoformat()} unavailable; trying previous")
             cycle = cycle - timedelta(hours=6)
-    raise RuntimeError("no recent IFS cycle available in the last 48 h") from last_error
+    raise RuntimeError(
+        "no recent IFS cycle available in the last 48 h"
+    ) from last_error
 
 
 class _EmptyIfsCycle(RuntimeError):
@@ -534,7 +556,9 @@ def _provider_result(count: int, failures: list[FailedLead]):
 def _as_provider_result(result: int | ProviderRunResult) -> ProviderRunResult:
     """Normalize legacy integer provider results for aggregation."""
     return (
-        result if isinstance(result, ProviderRunResult) else ProviderRunResult(result)
+        result
+        if isinstance(result, ProviderRunResult)
+        else ProviderRunResult(result)
     )
 
 
@@ -572,7 +596,9 @@ def build_provider_jobs(  # pylint: disable=too-many-arguments
     if service is None and any(
         (config.gfs_enabled, config.aifs_enabled, config.icon_enabled)
     ):
-        raise RuntimeError("enabled optional provider jobs require ingestion service")
+        raise RuntimeError(
+            "enabled optional provider jobs require ingestion service"
+        )
     # Import only when an enabled job needs its default implementation. This
     # keeps the base API environment independent of optional weather extras.
     if config.gfs_enabled and gfs_job is None:
@@ -619,7 +645,9 @@ def main() -> int:
     with factory() as session:
         _seed(session)
     config = SchedulerConfig.from_environment()
-    jobs = build_provider_jobs(config, lambda: _run_ifs_with_fallback(service), service)
+    jobs = build_provider_jobs(
+        config, lambda: _run_ifs_with_fallback(service), service
+    )
     result = run_once(jobs, recorder=DataSourceRunRecorder(factory))
     print(
         f"scheduler {result.status.value}: attempted={result.attempted_sources} "

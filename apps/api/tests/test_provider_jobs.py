@@ -20,6 +20,7 @@ from everest_api.scheduler.provider_jobs import (
     GFS_SURFACE_INVENTORY,
     ProviderJobConfigurationError,
     _materialize_gfs_wind_field,  # pylint: disable=protected-access
+    _resolved_herbie_source,  # pylint: disable=protected-access
     create_aifs_job,
     create_gfs_job,
     create_icon_job,
@@ -27,6 +28,22 @@ from everest_api.scheduler.provider_jobs import (
 
 
 CYCLE = datetime(2026, 8, 27, 12, tzinfo=UTC)
+
+
+def test_resolved_herbie_source_uses_matching_public_source_fields() -> None:
+    """Herbie 2026.x exposes concrete sources as grib_source/idx_source."""
+    assert (
+        _resolved_herbie_source(
+            SimpleNamespace(grib_source="AWS", idx_source="aws")
+        )
+        == "aws"
+    )
+    assert (
+        _resolved_herbie_source(
+            SimpleNamespace(grib_source="aws", idx_source="nomads")
+        )
+        is None
+    )
 
 
 class _CaptureService:

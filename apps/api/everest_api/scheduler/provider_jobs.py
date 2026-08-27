@@ -569,6 +569,7 @@ def _official_gfs_client() -> Any:
                 "GFS scheduler requires the optional Herbie dependency"
             ) from error
         herbie = Herbie(*args, **kwargs)
+        state["resolved_source"] = _resolved_herbie_source(herbie)
 
         class _VerifiedDownload:  # pylint: disable=too-few-public-methods
             def download(
@@ -576,10 +577,7 @@ def _official_gfs_client() -> Any:
             ) -> Any:
                 """Download once and capture Herbie's selected source."""
                 result = herbie.download(*download_args, **download_kwargs)
-                source = getattr(herbie, "SOURCE", None)
-                state["resolved_source"] = (
-                    source.lower() if isinstance(source, str) else None
-                )
+                state["resolved_source"] = _resolved_herbie_source(herbie)
                 return result
 
         return _VerifiedDownload()
@@ -599,6 +597,17 @@ def _official_gfs_client() -> Any:
             return client.retrieve(request)
 
     return _OfficialClient()
+
+
+def _resolved_herbie_source(herbie: Any) -> str | None:
+    """Return Herbie 2026.x's verified matching GRIB and inventory source."""
+    grib_source = getattr(herbie, "grib_source", None)
+    index_source = getattr(herbie, "idx_source", None)
+    if not isinstance(grib_source, str) or not isinstance(index_source, str):
+        return None
+    if grib_source.lower() != index_source.lower():
+        return None
+    return grib_source.lower()
 
 
 def _validate_artifact(artifact: Any, provider: str, request: Any) -> None:

@@ -8,9 +8,14 @@ WorkingDirectory=/mnt/d/Everest/apps/api
 EnvironmentFile=/root/.everest/db.env
 Environment=PYTHONPATH=/mnt/d/Everest:/mnt/d/Everest/apps/api:/mnt/d/Everest/packages/weather_ingestion_contract
 Environment=EVEREST_DB_HOST=127.0.0.1
+Environment=EVEREST_RAW_ROOT=/mnt/d/Everest-data/raw
 Environment=EVEREST_WIND_FIELD_DERIVED_ROOT=/var/lib/everest/derived
+Environment=EVEREST_SCHEDULER_IFS_ENABLED=true
+Environment=EVEREST_SCHEDULER_GFS_ENABLED=true
+Environment=EVEREST_SCHEDULER_AIFS_ENABLED=false
+Environment=EVEREST_SCHEDULER_ICON_ENABLED=false
 # Without this, Python block-buffers stdout into the journal pipe and a run that
 # takes 20 min logs nothing until it exits, so a stuck ingest is
 # indistinguishable from a slow one.
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/usr/bin/python3 schedule_forecast.py
+ExecStart=/opt/everest/worker-venv/bin/python schedule_forecast.py
