@@ -2578,6 +2578,9 @@ commercial-use confirmation.
 
 **ADR-015 five-route historical real-persisted HTTP evidence: NOT PROVEN.**
 
+**Superseded for the four-route gap by `EV-DATA-001-ADR015-VALIDATE-2026-08-28`**
+**(all five routes evidenced as historical disposable HTTP 200; see that record).**
+
 The exact five-route criterion is not closed because only one route has
 qualifying retained evidence. This is an evidence gap, not a claim that the
 other route implementations fail. The historical source/core forecast evidence
@@ -2629,6 +2632,36 @@ authorized future evidence activity. Any future activity must not be treated as
 authorized by this QA record and must follow the governance sequence. Until that
 decision, do not claim ADR-015 five-route closure, current service availability,
 or current health. Do not authorize a database rerun solely for documentation.
+
+## EV-DATA-001-ADR015-VALIDATE-2026-08-28 — Five-Route Disposable Evidence
+
+**Assignment ID:** `EV-DATA-001-ADR015-VALIDATE-2026-08-28`  
+**Date:** 2026-08-28  
+**Classification:** QA / disposable validation run (Manager-assigned under
+ADR-016 conditions)  
+**Status:** PASS — ADR-015 five-route historical disposable HTTP evidence
+established
+
+This run supersedes the four-route NOT PROVEN classifications of
+`EV-DATA-001-ADR015-QA-REEVAL`. It was executed under the ADR-016 future-run
+conditions: explicit Manager assignment, substantive objective (prove the four
+missing routes), QA harness `docs/qa/scripts/validate_adr015.py` reusing
+production ingestion and route-profile modules, random nonstandard port
+`59613`, disposable `postgres:17-alpine`, migrations `0001`→`0010`, teardown
+completed, and retained IFS data only (no external retrieval, no raw mutation).
+
+| Required route | Result | Evidence |
+| --- | --- | --- |
+| `GET /api/weather/forecast` | HTTP 200, 13 real records | IFS surface 2026-08-24T00Z (6008 m, -6.01 °C) |
+| `GET /api/weather/current` | HTTP 200, 13 real records | IFS 850 hPa, valid 2026-08-28T12Z |
+| `GET /api/weather/profile?profile=SUMMIT` | HTTP 200, 1 real interpolated record | 8848.86 m, interp 400-300 hPa, -16.82 °C |
+| `GET /api/weather/sources` | HTTP 200, 4 registry rows | IFS→connected, GFS/ICON configured, AIFS connected |
+| `GET /api/data-health` | HTTP 200, 4 health rows | health=unknown (not fabricated) |
+
+Evidence artifact: `docs/qa/adr015-disposable-evidence-2026-08-28.json`.
+Current health and API availability remain `unknown` after teardown. This is
+historical disposable evidence and is not a live-service or current-health
+claim. No UI was built.
 
 ## EV-GATEC-OP-RETENTION-002-OFFLINE — B2 QA skeleton
 

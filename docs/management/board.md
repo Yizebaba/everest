@@ -24,7 +24,7 @@
 | EV-DATA-001-F | F: ECMWF AIFS | meteorology + backend | complete (source/core PASS; historical disposable `verified` after commit; current health/API unknown; documented current registry remains `connected`) | Phase E final review PASS | `docs/meteorology/weather-spec.md` |
 | EV-DATA-001-F-UI-WAIVER | F: Option B delivery-boundary decision | Everest Manager | complete; `AGENTS.md` amended and ADR-014 accepted | none | `docs/management/decisions.md` |
 | EV-DATA-001-F-QA | F: AIFS verification | qa | complete | none | `docs/qa/test-plan.md` |
-| EV-DATA-001-F-REPORT | Phase-F report/stop gate | Everest Manager | published; exact ADR-015 criterion not proven | historical evidence limitation accepted | `docs/management/phase-f-report.md` |
+| EV-DATA-001-F-REPORT | Phase-F report/stop gate | Everest Manager | published; exact ADR-015 criterion not proven at the time (superseded by ADR-021, 2026-08-28) | historical evidence limitation accepted | `docs/management/phase-f-report.md` |
 | EV-DATA-001-F-QA-RETEST-DISPLAY | F: historical final closure QA | qa | complete for source/core and UI deferral; does not evidence all ADR-015 endpoints | none | `docs/qa/test-plan.md` |
 | EV-DATA-001-ADR015-RECONCILE-MGMT | ADR-015 management evidence reconciliation | Everest Manager | complete; forecast proven, four-route gap recorded | architecture audit | `docs/management/decisions.md` |
 | EV-DATA-001-ADR015-ENDPOINT-QA | ADR-015 endpoint evidence QA | qa | complete; exact five-route criterion not proven | no rerun authorized | `docs/qa/test-plan.md` |
@@ -37,7 +37,9 @@ It is not the current tree. The source/core work remains historically accepted.
 The exact five-route display criterion was not proven in the 2026-08-22
 inventory: forecast was evidenced; current, profile, sources, and data-health
 were not. That inventory is historical; it is not a claim that those routes are
-absent from HEAD.
+absent from HEAD. **The four-route gap was closed by the 2026-08-28 disposable
+validation run (ADR-021); see "ADR-015 endpoint evidence update (2026-08-28)"
+above. Current health and API availability remain `unknown`.**
 
 ## Current workspace state (2026-08-27)
 
@@ -99,6 +101,16 @@ database remain separately scoped.
   four routes.
 - Current health and API availability remain `unknown` after teardown. This is
   an evidence reconciliation only, not a live-service claim.
+
+### ADR-015 endpoint evidence update (2026-08-28)
+
+The Everest Manager assigned a substantive disposable validation run (ADR-021,
+`EV-DATA-001-ADR015-VALIDATE-2026-08-28`) that closed the four-route evidence
+gap. All five ADR-015 routes returned HTTP `200` with real canonical records
+over disposable PostgreSQL (port `59613`, retained IFS only, migrations
+`0001`→`0010`, torn down after the run). Evidence:
+`docs/qa/adr015-disposable-evidence-2026-08-28.json`. This is historical
+disposable evidence; current health and API availability remain `unknown`.
 
 ## EV-DATA-001-F-REPORT — 2026-08-22 Manager Continuation
 

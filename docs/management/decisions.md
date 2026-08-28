@@ -1214,14 +1214,48 @@ inferred from shared code or forecast evidence.
 
 The four forecast source/core chains remain accepted historical facts. Current
 health and API availability remain `unknown` after teardown. The exact ADR-015
-five-route display criterion remains **not proven**. Delivery remains stopped;
-the stopped state is not relabeled as fully ADR-015-compliant closure.
+five-route display criterion remains **not proven** in this record. Delivery remains
+stopped; the stopped state is not relabeled as fully ADR-015-compliant closure.
+**Superseded for the four-route evidence gap by ADR-021 (2026-08-28 disposable
+validation run, evidence `docs/qa/adr015-disposable-evidence-2026-08-28.json`).
+Current health and API availability remain `unknown` after teardown.**
 
 A future validation run may occur only under a new explicit Manager assignment
 with a substantive validation objective, QA plan, random nonstandard port,
 disposable environment, teardown procedure, and no external retrieval/raw
 mutation unless separately required and approved. It must not be authorized
 merely to repair documentation.
+
+## ADR-021: ADR-015 Four-Route Disposable Evidence Closed
+
+**Assignment:** Everest Manager directive, 2026-08-28  
+**Validation run:** `EV-DATA-001-ADR015-VALIDATE-2026-08-28`  
+**Review date:** 2026-08-28  
+**Classification:** product + architecture + QA governance  
+**Status:** Accepted; ADR-015 four-route historical evidence gap closed
+
+Under the ADR-016 future-validation conditions, the Everest Manager assigned a
+substantive disposable validation run with the explicit objective of proving the
+four ADR-015 routes that lacked retained HTTP evidence. The run used retained
+real IFS payloads only (no external retrieval, no raw mutation), a disposable
+`postgres:17-alpine` on random nonstandard port `59613`, a QA harness
+(`docs/qa/scripts/validate_adr015.py`) reusing the production ingestion and
+route-profile modules, migrations `0001`→`0010`, and a completed teardown
+(container removed, port released).
+
+All five ADR-015 routes returned HTTP `200` with real canonical records over
+PostgreSQL: `/api/weather/forecast` (13 records),
+`/api/weather/current` (13 records), `/api/weather/profile?profile=SUMMIT`
+(1 interpolated record at 8848.86 m), `/api/weather/sources` (4 registry rows),
+and `/api/data-health` (4 health rows).
+
+Evidence artifact: `docs/qa/adr015-disposable-evidence-2026-08-28.json`.
+
+The ADR-015 five-route display criterion is now **historically evidenced**
+(disposable). ADR-016 remains the record of the prior accepted limitation; its
+four-route evidence gap is superseded by this evidence. Current health and API
+availability remain `unknown` after teardown. No UI was built; the prohibition
+on new UI and on frontends calling external sources remains in force.
 
 ## ADR-017: Post-A-F Delivery Sequence
 

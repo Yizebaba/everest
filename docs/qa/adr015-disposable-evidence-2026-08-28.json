@@ -1,0 +1,136 @@
+{
+  "database_url": "postgresql+psycopg://everest:***@127.0.0.1:59613/everest",
+  "pressure": {
+    "cycle": "2026-08-27T12:00:00+00:00",
+    "lead_seconds": 86400,
+    "levels_ingested": 6,
+    "payload": "/mnt/d/Everest-data/raw/ecmwf-ifs/00741f3867fc303f676830ec4a6fb755aaf2bf313c54688f7e6dff326b9843ff/pressure.grib2",
+    "profiles_ingested": 6,
+    "sha256": "00741f3867fc303f676830ec4a6fb755aaf2bf313c54688f7e6dff326b9843ff",
+    "size_bytes": 14761929,
+    "valid_time": "2026-08-28T12:00:00+00:00"
+  },
+  "registry_statuses": {
+    "dwd-icon": {
+      "health": "unknown",
+      "status": "configured"
+    },
+    "ecmwf-aifs": {
+      "health": "unknown",
+      "status": "connected"
+    },
+    "ecmwf-ifs": {
+      "health": "unknown",
+      "status": "connected"
+    },
+    "noaa-gfs": {
+      "health": "unknown",
+      "status": "configured"
+    }
+  },
+  "routes": [
+    {
+      "correlation_id": "93456c9f-5828-44b1-8359-3b8bb4e325ea",
+      "params": {},
+      "profile": null,
+      "record_count": 13,
+      "route": "/api/weather/forecast",
+      "sample": {
+        "altitude": 6008.053905863623,
+        "model": "IFS",
+        "record_type": "forecast",
+        "route_profile": null,
+        "source": "ecmwf-ifs",
+        "spatial_key": "ifs:0p25:28.0:87.0",
+        "temperature": -6.010473632812477,
+        "timestamp": "2026-08-24T00:00:00Z",
+        "wind_speed": 0.950310979881595
+      },
+      "source_count": 0,
+      "status_code": 200
+    },
+    {
+      "correlation_id": "4727e34b-a85f-4d09-bcc1-9bbad7ffda13",
+      "params": {},
+      "profile": null,
+      "record_count": 13,
+      "route": "/api/weather/current",
+      "sample": {
+        "altitude": 1506.20654296875,
+        "model": "IFS",
+        "record_type": "forecast",
+        "route_profile": null,
+        "source": "ecmwf-ifs",
+        "spatial_key": "ifs:0p25:28.0:87.0:850hpa",
+        "temperature": 18.872705078125023,
+        "timestamp": "2026-08-28T12:00:00Z",
+        "wind_speed": 0.9321639097864184
+      },
+      "source_count": 0,
+      "status_code": 200
+    },
+    {
+      "correlation_id": "2a9ba6d9-9da8-4614-a3b9-b4924a224d91",
+      "params": {
+        "profile": "SUMMIT"
+      },
+      "profile": "SUMMIT",
+      "record_count": 1,
+      "route": "/api/weather/profile",
+      "sample": {
+        "altitude": 8848.86,
+        "model": "IFS",
+        "record_type": "forecast",
+        "route_profile": "SUMMIT",
+        "source": "ecmwf-ifs",
+        "spatial_key": "ifs:0p25:28.0:87.0:SUMMIT@8849m:interp400-300hpa",
+        "temperature": -16.816904397092006,
+        "timestamp": "2026-08-28T12:00:00Z",
+        "wind_speed": 2.013174431631123
+      },
+      "source_count": 0,
+      "status_code": 200
+    },
+    {
+      "correlation_id": "abcffe55-401f-4efa-b5ce-efa6d14bd674",
+      "params": {},
+      "profile": null,
+      "record_count": 0,
+      "route": "/api/weather/sources",
+      "sample": {
+        "keys": [
+          "sources"
+        ]
+      },
+      "source_count": 4,
+      "status_code": 200
+    },
+    {
+      "correlation_id": "4e5cec00-e0eb-421e-8351-0c550a19eab9",
+      "params": {},
+      "profile": null,
+      "record_count": 0,
+      "route": "/api/data-health",
+      "sample": {
+        "keys": [
+          "sources"
+        ]
+      },
+      "source_count": 4,
+      "status_code": 200
+    }
+  ],
+  "run_finished_at": "2026-08-27T20:39:07.066508+00:00",
+  "run_started_at": "2026-08-27T20:38:57.946376+00:00",
+  "source": "retained-only (no external retrieval)",
+  "surface": {
+    "altitude_m": 6008.053905863623,
+    "payload": "/mnt/d/Everest-data/raw/ecmwf-ifs/638a075b6ba11c52131c6bc4ad05e49b2c8932d7026c99c3be6658d5315e1650/20260824000000-0h-oper-fc.grib2",
+    "sha256": "638a075b6ba11c52131c6bc4ad05e49b2c8932d7026c99c3be6658d5315e1650",
+    "size_bytes": 3026926,
+    "temperature_c": -6.010473632812477,
+    "valid_time": "2026-08-24T00:00:00+00:00",
+    "wind_speed": 0.950310979881595
+  },
+  "total_weather_records": 13
+}

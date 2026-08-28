@@ -35,8 +35,11 @@ Next.js, Cesium, browser, or other UI, and no UI was implemented. Current health
 and availability remain `unknown` after teardown.
 
 **Report status:** complete for the confirmed A-F stop. **AIFS source/core QA
-status:** PASS. **ADR-015 five-route display evidence:** NOT FULLY EVIDENCED;
-QA is complete and ADR-016 records the accepted historical limitation.
+status:** PASS. **ADR-015 five-route display evidence:** EVIDENCED HISTORICALLY
+(disposable) — all five routes returned HTTP `200` with real canonical records
+in the 2026-08-28 validation run; see the ADR-015 Evidence Update below. ADR-016
+recorded the prior four-route limitation; ADR-021 closed it with disposable
+evidence.
 
 ## Source Evidence
 
@@ -290,11 +293,11 @@ assertions, and retained provider-backed HTTP evidence are not interchangeable.
 
 | Required route | Implemented | Exact retained evidence | ADR-015 finding |
 | --- | --- | --- | --- |
-| `GET /api/weather/current` | Yes | Synthetic fake-session HTTP only. A `TestClient` case returned HTTP `200` from a transient hard-coded ORM-shaped object; it did not query PostgreSQL. Synthetic PostgreSQL persistence assertions exist elsewhere, but no retained provider-backed HTTP invocation or response was found for this route. | **NOT EVIDENCED** for real canonical PostgreSQL/provider data over HTTP. |
-| `GET /api/weather/forecast` | Yes | Retained provider bytes were parsed, normalized, committed to disposable PostgreSQL, and queried over HTTP for the accepted source paths. ICON and AIFS retain executable integration coverage and historical HTTP `200` evidence; IFS and GFS retain historical handoff evidence for HTTP `200` forecast results. | **EVIDENCED HISTORICALLY.** This is disposable historical evidence, not current availability. |
-| `GET /api/weather/profile` | Yes | Synthetic fake-session HTTP only. The HTTP `200` case used a transient hard-coded `route_profile="SUMMIT"` object and no PostgreSQL query. Synthetic direct-database profile facts exist, but no retained provider-backed HTTP invocation or response was found. | **NOT EVIDENCED** for real canonical PostgreSQL/provider data over HTTP. |
-| `GET /api/weather/sources` | Yes | Historical provider integrations populated and directly asserted underlying registry lifecycle and health rows after canonical commit. No retained invocation, HTTP status, or response body for this exact route was found. | **NOT EVIDENCED** over HTTP; underlying persisted rows are not endpoint-response evidence. |
-| `GET /api/data-health` | Yes | Historical provider integrations populated and directly asserted underlying lifecycle and health rows. No retained invocation, HTTP status, or response body for this exact route was found. | **NOT EVIDENCED** over HTTP; underlying persisted rows are not endpoint-response evidence. |
+| `GET /api/weather/current` | Yes | Retained IFS bytes (surface + pressure) were parsed, normalized, committed to disposable PostgreSQL, and queried over HTTP with `200` and 13 real records in the 2026-08-28 disposable validation run. | **EVIDENCED HISTORICALLY** (disposable 2026-08-28). This is disposable historical evidence, not current availability. |
+| `GET /api/weather/forecast` | Yes | Retained provider bytes were parsed, normalized, committed to disposable PostgreSQL, and queried over HTTP for the accepted source paths. ICON and AIFS retain executable integration coverage and historical HTTP `200` evidence; IFS and GFS retain historical handoff evidence; the 2026-08-28 disposable validation run also returned HTTP `200` with 13 real IFS records. | **EVIDENCED HISTORICALLY.** This is disposable historical evidence, not current availability. |
+| `GET /api/weather/profile` | Yes | Retained IFS pressure levels were parsed, normalized, vertically interpolated to route elevations, persisted, and queried over HTTP: `?profile=SUMMIT` returned HTTP `200` with a real interpolated record (8848.86 m, interp 400-300 hPa) in the 2026-08-28 disposable validation run. | **EVIDENCED HISTORICALLY** (disposable 2026-08-28). This is disposable historical evidence, not current availability. |
+| `GET /api/weather/sources` | Yes | The 2026-08-28 disposable validation run persisted four real registry source rows (IFS/GFS/ICON/AIFS) and returned HTTP `200` with all four over HTTP. | **EVIDENCED HISTORICALLY** (disposable 2026-08-28). This is disposable historical evidence, not current availability. |
+| `GET /api/data-health` | Yes | The 2026-08-28 disposable validation run returned HTTP `200` with the four persisted registry health rows over HTTP. | **EVIDENCED HISTORICALLY** (disposable 2026-08-28). This is disposable historical evidence, not current availability. |
 
 Consequently, this report makes no generalized claim that all five routes
 returned real data. It retains the final source/core evidence and the exact
@@ -303,6 +306,28 @@ route existence into missing HTTP evidence. The missing evidence was not
 regenerated because `AGENTS.md` prohibits rerunning a database solely to close
 documentation. No database, API, provider, raw-data operation, or test was run
 for this correction.
+
+## ADR-015 Evidence Update — 2026-08-28 Disposable Validation Run
+
+The Everest Manager assigned a substantive validation run (ADR-021,
+`EV-DATA-001-ADR015-VALIDATE-2026-08-28`) to close the four-route evidence gap
+recorded by ADR-016. Under the ADR-016 future-run conditions (explicit
+assignment, substantive objective, QA harness, random nonstandard port `59613`,
+disposable `postgres:17-alpine`, teardown, no external retrieval), the run:
+
+- ingested only retained real IFS payloads (surface `638a075b…`, pressure
+  `00741f…`, SHA-256 verified; no provider contact and no raw mutation);
+- migrated the disposable database to head (`0001`→`0010`);
+- returned HTTP `200` with real canonical records for all five ADR-015 routes:
+  `forecast` 13 records, `current` 13 records, `profile?profile=SUMMIT` 1
+  interpolated record (8848.86 m, interp 400–300 hPa), `sources` 4 registry
+  rows, `data-health` 4 health rows;
+- recorded evidence at `docs/qa/adr015-disposable-evidence-2026-08-28.json`;
+- was torn down after the run (container removed, port `59613` released).
+
+This closes the ADR-015 four-route evidence gap. It is historical disposable
+evidence only. Current health and API availability remain `unknown` after
+teardown; no live-service or current-health claim follows.
 
 The public canonical allow-list excludes raw object identifiers and paths,
 provider URLs, hashes, metadata, retention, hold, disposition, and audit facts.
