@@ -111,6 +111,7 @@ services:
       EVEREST_WIND_FIELD_DERIVED_ROOT: /var/lib/everest/derived
       EVEREST_SCHEDULER_IFS_ENABLED: "true"
       EVEREST_SCHEDULER_GFS_ENABLED: "true"
+      EVEREST_SCHEDULER_GEFS_ENABLED: "false"
       EVEREST_SCHEDULER_AIFS_ENABLED: "false"
       EVEREST_SCHEDULER_ICON_ENABLED: "false"
     volumes:

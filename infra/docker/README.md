@@ -74,7 +74,7 @@ docker compose -f infra/docker/compose.yml --profile jobs run --rm scheduler
 
 The jobs profile runs the same one-shot migration first. The worker then runs
 `apps/api/schedule_forecast.py` once and exits with that program's status. IFS
-and GFS are enabled; AIFS and ICON are explicitly disabled. The worker is
+and GFS are enabled; GEFS, AIFS, and ICON are explicitly disabled. The worker is
 capped at 8 GiB memory. Re-run the command from an external scheduler when
 another pass is required; this container does not contain a timer or daemon
 loop.

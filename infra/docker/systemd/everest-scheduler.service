@@ -12,6 +12,7 @@ Environment=EVEREST_RAW_ROOT=/mnt/d/Everest-data/raw
 Environment=EVEREST_WIND_FIELD_DERIVED_ROOT=/var/lib/everest/derived
 Environment=EVEREST_SCHEDULER_IFS_ENABLED=true
 Environment=EVEREST_SCHEDULER_GFS_ENABLED=true
+Environment=EVEREST_SCHEDULER_GEFS_ENABLED=false
 Environment=EVEREST_SCHEDULER_AIFS_ENABLED=false
 Environment=EVEREST_SCHEDULER_ICON_ENABLED=false
 # Without this, Python block-buffers stdout into the journal pipe and a run that
