@@ -1,7 +1,7 @@
 param(
     [string]$ApiContainer = "everest-weather-api",
     [string]$TunnelContainer = "everest-windy-quick-tunnel",
-    [int]$ApiPort = 52148
+    [int]$ApiPort = 52149
 )
 
 $ErrorActionPreference = "Stop"

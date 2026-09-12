@@ -107,7 +107,6 @@
     let refreshEpoch = 0;
 
     const endpoint = (path: string) => `${apiBase.replace(/\/$/, '')}${path}`;
-    const usgsAllHourUrl = 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_hour.geojson';
     const isTestTelemetry = (properties: Record<string, unknown>) => {
         const deviceId = String(properties.device_id || '');
         const sourceReference = String(properties.source_reference || '');
@@ -222,16 +221,22 @@
     };
     const loadEarthquakes = async () => {
         earthquakeController?.abort();
+        if (!apiBase.trim()) {
+            earthquakeStatus = 'unavailable';
+            clearEarthquakes();
+            return;
+        }
         const controller = new AbortController();
         earthquakeController = controller;
         earthquakeStatus = 'loading';
         try {
-            const response = await fetch(usgsAllHourUrl, { signal: controller.signal });
+            const response = await fetch(endpoint('/api/external/usgs-earthquakes'), { signal: controller.signal });
             if (!response.ok) throw new Error(`USGS: ${response.status}`);
             const payload = await response.json();
             if (earthquakeController !== controller) return;
+            if (payload.status === 'unavailable') throw new Error('USGS upstream unavailable');
             earthquakeFeatures = Array.isArray(payload.features) ? payload.features : [];
-            earthquakeStatus = 'available';
+            earthquakeStatus = payload.status === 'stale' ? 'unavailable' : 'available';
             drawEarthquakes();
         } catch {
             if (earthquakeController === controller && !controller.signal.aborted) earthquakeStatus = 'unavailable';

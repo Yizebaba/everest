@@ -2,7 +2,7 @@ import type { ExternalPluginConfig } from '@windy/interfaces.d';
 
 const config: ExternalPluginConfig = {
     name: 'windy-plugin-everest-mhews',
-    version: '0.1.8',
+    version: '0.1.9',
     icon: '⛰',
     title: 'EVEREST MHEWS',
     description: 'Multi-hazard monitoring layers for the Everest region.',
