@@ -22,6 +22,15 @@
         <div class="metric"><span>TELEMETRY</span><strong>{sensors.length}</strong><small>{sensors.length ? 'positioned observations' : 'no usable positions'}</small></div>
     </div>
 
+    <div class="external-layer">
+        <div class="section-heading"><span>USGS EARTHQUAKES</span><span class="muted">PAST HOUR</span></div>
+        <div class="external-layer__row">
+            <span>{earthquakeStatus === 'available' ? `${earthquakeFeatures.length} events` : earthquakeStatus}</span>
+            <button on:click={toggleEarthquakes}>{showEarthquakes ? 'HIDE MAP' : 'SHOW MAP'}</button>
+        </div>
+        <small>U.S. Geological Survey · background awareness only</small>
+    </div>
+
     <div class="section-heading"><span>LIVE EVIDENCE</span><span class="muted">read-only adapter</span></div>
     {#if sensors.length}
         <div class="sensor-list">
@@ -87,11 +96,18 @@
     let chartPoints = '';
     let errorMessage = '';
     let layers: L.Layer[] = [];
+    let earthquakeLayers: L.Layer[] = [];
+    let earthquakeFeatures: any[] = [];
+    let earthquakeStatus: 'loading' | 'available' | 'unavailable' = 'loading';
+    let showEarthquakes = true;
     let refreshController: AbortController | null = null;
     let mapController: AbortController | null = null;
+    let earthquakeController: AbortController | null = null;
+    let earthquakeTimer: ReturnType<typeof setInterval> | null = null;
     let refreshEpoch = 0;
 
     const endpoint = (path: string) => `${apiBase.replace(/\/$/, '')}${path}`;
+    const usgsAllHourUrl = 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_hour.geojson';
     const isTestTelemetry = (properties: Record<string, unknown>) => {
         const deviceId = String(properties.device_id || '');
         const sourceReference = String(properties.source_reference || '');
@@ -180,6 +196,54 @@
         chartPoints = chartValues.map((value, index) => `${8 + index * (344 / (chartValues.length - 1))},${92 - ((value - min) / span) * 70}`).join(' ');
     };
 
+    const clearEarthquakes = () => {
+        earthquakeLayers.forEach(layer => map.removeLayer(layer));
+        earthquakeLayers = [];
+    };
+    const drawEarthquakes = () => {
+        clearEarthquakes();
+        if (!showEarthquakes) return;
+        earthquakeFeatures.forEach(feature => {
+            const coordinates = feature.geometry?.coordinates;
+            if (!Array.isArray(coordinates) || coordinates.length < 2) return;
+            const [lon, lat, depth] = coordinates;
+            const magnitude = Number(feature.properties?.mag);
+            if (!Number.isFinite(lat) || !Number.isFinite(lon) || !Number.isFinite(magnitude)) return;
+            const marker = new L.CircleMarker([lat, lon], {
+                radius: Math.max(4, Math.min(12, 3 + magnitude * 2)),
+                color: magnitude >= 5 ? '#e56b55' : magnitude >= 3 ? '#f2ad42' : '#52b6c7',
+                fillOpacity: 0.8,
+                weight: 1,
+            });
+            marker.bindTooltip(`M ${magnitude.toFixed(1)} · ${feature.properties?.place || 'USGS event'} · ${depth ?? '?'} km`);
+            marker.addTo(map);
+            earthquakeLayers.push(marker);
+        });
+    };
+    const loadEarthquakes = async () => {
+        earthquakeController?.abort();
+        const controller = new AbortController();
+        earthquakeController = controller;
+        earthquakeStatus = 'loading';
+        try {
+            const response = await fetch(usgsAllHourUrl, { signal: controller.signal });
+            if (!response.ok) throw new Error(`USGS: ${response.status}`);
+            const payload = await response.json();
+            if (earthquakeController !== controller) return;
+            earthquakeFeatures = Array.isArray(payload.features) ? payload.features : [];
+            earthquakeStatus = 'available';
+            drawEarthquakes();
+        } catch {
+            if (earthquakeController === controller && !controller.signal.aborted) earthquakeStatus = 'unavailable';
+        } finally {
+            if (earthquakeController === controller) earthquakeController = null;
+        }
+    };
+    const toggleEarthquakes = () => {
+        showEarthquakes = !showEarthquakes;
+        drawEarthquakes();
+    };
+
     const removeLayers = () => { layers.forEach(layer => map.removeLayer(layer)); layers = []; };
     const drawLayers = (alertsGeoJson: any, publicGeoJson: any) => {
         removeLayers();
@@ -198,10 +262,15 @@
     onMount(() => {
         try { apiBase = localStorage.getItem(apiBaseStorageKey) || ''; }
         catch { apiBase = ''; }
+        loadEarthquakes();
+        earthquakeTimer = setInterval(loadEarthquakes, 60000);
     });
     onDestroy(() => {
         refreshController?.abort();
         mapController?.abort();
+        earthquakeController?.abort();
+        if (earthquakeTimer) clearInterval(earthquakeTimer);
+        clearEarthquakes();
         removeLayers();
     });
 </script>
@@ -213,6 +282,7 @@
     .status { font-size:10px; color:#e56b55; padding-top:5px; white-space:nowrap; } .status.connected { color:#51c7a3; } .status-dot,.sensor-signal,.alert-dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:#e56b55; margin-right:5px; } .connected .status-dot { background:#51c7a3; } .sensor-signal { background:#51c7a3; } .sensor-signal.warning { background:#f2ad42; }
     .connection { display:flex; align-items:center; gap:6px; margin:12px 0; } .connection label { color:#91a5aa; font-size:10px; } input { min-width:0; flex:1; background:#172126; border:1px solid #33464d; color:#cbd6d8; padding:7px; font-size:10px; } .connection button,.filter { background:#f2ad42; border:1px solid #f2ad42; color:#151b1d; padding:7px 9px; font-size:10px; cursor:pointer; }
     .summary-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:1px; background:#304047; margin:14px 0 20px; } .metric { background:#172126; padding:11px 8px; } .metric strong { display:block; font-size:18px; margin:8px 0 3px; } .metric small,.sensor small { color:#869ba0; font-size:10px; } .unknown { color:#e56b55; }
+    .external-layer { border-top:1px solid #304047; border-bottom:1px solid #304047; padding:1px 0 11px; } .external-layer__row { display:flex; align-items:center; justify-content:space-between; font-size:12px; color:#d7e1e3; } .external-layer__row button { background:#172126; border:1px solid #33464d; color:#b4c2c5; padding:6px 8px; font-size:10px; cursor:pointer; } .external-layer small { display:block; color:#869ba0; font-size:10px; margin-top:6px; }
     .section-heading { display:flex; justify-content:space-between; margin:16px 0 8px; } .muted { color:#657a80; } .sensor-list,.alert-list { display:grid; gap:5px; } .sensor,.alert { display:flex; align-items:center; background:#172126; border:1px solid #263940; padding:9px; } .sensor-copy { flex:1; } .sensor-copy b { display:block; font-size:12px; font-weight:500; margin-bottom:3px; } .sensor-value { font-size:15px; color:#f2ad42; text-align:right; } .sensor-value small { display:block; } .alert { color:#d7e1e3; font-size:11px; } .alert-dot { background:#e56b55; }
     .api-error { color:#f2ad42; font-size:10px; border:1px solid #7b5c2c; padding:7px; margin:-4px 0 8px; overflow-wrap:anywhere; } .empty,.chart-message { color:#91a5aa; font-size:11px; padding:12px 4px; border:1px dashed #33464d; } .chart-panel { border-top:1px solid #304047; margin-top:20px; padding-top:1px; } .chart { width:100%; height:130px; overflow:visible; } .gridline { stroke:#2e4147; stroke-width:1; } .trend { fill:none; stroke:#52b6c7; stroke-width:2.5; } text { fill:#71858a; font-size:8px; }
     .legend { display:flex; gap:12px; color:#8fa3a8; font-size:10px; border-top:1px solid #304047; padding-top:12px; } .legend-dot { display:inline-block; width:7px; height:7px; border-radius:50%; margin-right:4px; } .red { background:#e56b55; } .cyan { background:#52b6c7; } .amber { background:#f2ad42; }
