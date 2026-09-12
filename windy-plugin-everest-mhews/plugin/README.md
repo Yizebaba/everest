@@ -10,6 +10,7 @@ Standalone Windy plugin for the Everest multi-hazard monitoring view.
 - Persisted weather pressure records from `/api/weather/forecast`.
 - `UNKNOWN` when the API or evidence is unavailable; this UI never derives a decision level.
 - Test telemetry and CAP `Test` or `Exercise` messages are not shown as operational evidence.
+- A map-layer rendering error does not suppress successfully loaded API data in the panel.
 
 ## Development
 

@@ -124,10 +124,15 @@
             alertHeadlines = actualAlerts.flatMap((alert: any) => (alert.info || []).map((item: any) => item.headline || item.event || alert.identifier)).slice(0, 4);
             const actualAlertIds = new Set(actualAlerts.map((alert: any) => alert.identifier));
             const actualAlertGeoJson = { ...alertGeoJson, features: (alertGeoJson.features || []).filter((feature: any) => actualAlertIds.has(feature.id)) };
-            drawLayers(actualAlertGeoJson, publicGeoJson);
             const records = weather.records || [];
             chartValues = records.map((record: any) => Number(record.pressure)).filter(Number.isFinite).slice(-8);
             updateChart(); chartStatus = 'ready'; apiState = 'available';
+            try {
+                drawLayers(actualAlertGeoJson, publicGeoJson);
+            } catch (error) {
+                // A malformed optional map layer must not hide successfully loaded evidence.
+                console.error('MHEWS map layer rendering failed', error);
+            }
         } catch {
             sensors = []; alertCount = 0; alertHeadlines = []; decision = 'UNKNOWN';
             removeLayers(); chartStatus = 'error'; apiState = 'unavailable';
