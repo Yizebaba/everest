@@ -21,7 +21,8 @@ from everest_api.persistence.database import (
     resolve_database_url,
 )
 
-PORT = int(os.environ.get("EVEREST_API_PORT", "52147"))
+# Cloud Run injects PORT; local Docker keeps the documented Everest port.
+PORT = int(os.environ.get("PORT", os.environ.get("EVEREST_API_PORT", "52147")))
 HOST = os.environ.get("EVEREST_API_HOST", "0.0.0.0")
 
 
