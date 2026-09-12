@@ -14,6 +14,7 @@
         <input id="api-base" bind:value={apiBase} on:change={persistApiBase} aria-label="MHEWS API base URL" placeholder="https://your-everest-api.example" />
         <button type="submit">REFRESH</button>
     </form>
+    {#if errorMessage}<div class="api-error">{errorMessage}</div>{/if}
 
     <div class="summary-grid">
         <div class="metric"><span>DECISION</span><strong class="unknown">{decision}</strong><small>Windy is display-only</small></div>
@@ -84,6 +85,7 @@
     let chartStatus: 'loading' | 'ready' | 'error' = 'loading';
     let chartValues: number[] = [];
     let chartPoints = '';
+    let errorMessage = '';
     let layers: L.Layer[] = [];
 
     const endpoint = (path: string) => `${apiBase.replace(/\/$/, '')}${path}`;
@@ -98,22 +100,28 @@
         else localStorage.removeItem(apiBaseStorageKey);
     };
     const readJson = async (path: string) => {
-        const response = await fetch(endpoint(path));
-        if (!response.ok) throw new Error(`${path}: ${response.status}`);
-        return response.json();
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 15000);
+        try {
+            const response = await fetch(endpoint(path), { signal: controller.signal });
+            if (!response.ok) throw new Error(`${path}: ${response.status}`);
+            return response.json();
+        } finally {
+            clearTimeout(timeout);
+        }
     };
 
     const refresh = async () => {
-        apiState = 'loading'; chartStatus = 'loading';
+        apiState = 'loading'; chartStatus = 'loading'; errorMessage = '';
         if (!apiBase.trim()) {
             sensors = []; alertCount = 0; alertHeadlines = []; decision = 'UNKNOWN';
             removeLayers(); chartStatus = 'error'; apiState = 'unavailable';
             return;
         }
         try {
-            const [telemetry, alerts, alertGeoJson, publicGeoJson, weather] = await Promise.all([
+            const [telemetry, alerts, alertGeoJson, weather] = await Promise.all([
                 readJson('/api/telemetry/geojson'), readJson('/api/alerts'), readJson('/api/alerts/geojson'),
-                readJson('/api/osm/public-baseline/geojson'), readJson('/api/weather/forecast'),
+                readJson('/api/weather/forecast'),
             ]);
             sensors = (telemetry.features || []).filter((feature: any) => !isTestTelemetry(feature.properties || {})).map((feature: any) => {
                 const p = feature.properties || {}; const c = feature.geometry?.coordinates;
@@ -128,14 +136,22 @@
             chartValues = records.map((record: any) => Number(record.pressure)).filter(Number.isFinite).slice(-8);
             updateChart(); chartStatus = 'ready'; apiState = 'available';
             try {
-                drawLayers(actualAlertGeoJson, publicGeoJson);
+                drawLayers(actualAlertGeoJson, { type: 'FeatureCollection', features: [] });
             } catch (error) {
                 // A malformed optional map layer must not hide successfully loaded evidence.
                 console.error('MHEWS map layer rendering failed', error);
             }
-        } catch {
+            void readJson('/api/osm/public-baseline/geojson').then(publicGeoJson => {
+                try {
+                    drawLayers(actualAlertGeoJson, publicGeoJson);
+                } catch (error) {
+                    console.error('MHEWS public geometry rendering failed', error);
+                }
+            }).catch(error => console.warn('MHEWS public geometry unavailable', error));
+        } catch (error) {
             sensors = []; alertCount = 0; alertHeadlines = []; decision = 'UNKNOWN';
             removeLayers(); chartStatus = 'error'; apiState = 'unavailable';
+            errorMessage = error instanceof Error ? error.message : 'MHEWS API request failed';
         }
     };
 
@@ -172,6 +188,6 @@
     .connection { display:flex; align-items:center; gap:6px; margin:12px 0; } .connection label { color:#91a5aa; font-size:10px; } input { min-width:0; flex:1; background:#172126; border:1px solid #33464d; color:#cbd6d8; padding:7px; font-size:10px; } .connection button,.filter { background:#f2ad42; border:1px solid #f2ad42; color:#151b1d; padding:7px 9px; font-size:10px; cursor:pointer; }
     .summary-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:1px; background:#304047; margin:14px 0 20px; } .metric { background:#172126; padding:11px 8px; } .metric strong { display:block; font-size:18px; margin:8px 0 3px; } .metric small,.sensor small { color:#869ba0; font-size:10px; } .unknown { color:#e56b55; }
     .section-heading { display:flex; justify-content:space-between; margin:16px 0 8px; } .muted { color:#657a80; } .sensor-list,.alert-list { display:grid; gap:5px; } .sensor,.alert { display:flex; align-items:center; background:#172126; border:1px solid #263940; padding:9px; } .sensor-copy { flex:1; } .sensor-copy b { display:block; font-size:12px; font-weight:500; margin-bottom:3px; } .sensor-value { font-size:15px; color:#f2ad42; text-align:right; } .sensor-value small { display:block; } .alert { color:#d7e1e3; font-size:11px; } .alert-dot { background:#e56b55; }
-    .empty,.chart-message { color:#91a5aa; font-size:11px; padding:12px 4px; border:1px dashed #33464d; } .chart-panel { border-top:1px solid #304047; margin-top:20px; padding-top:1px; } .chart { width:100%; height:130px; overflow:visible; } .gridline { stroke:#2e4147; stroke-width:1; } .trend { fill:none; stroke:#52b6c7; stroke-width:2.5; } text { fill:#71858a; font-size:8px; }
+    .api-error { color:#f2ad42; font-size:10px; border:1px solid #7b5c2c; padding:7px; margin:-4px 0 8px; overflow-wrap:anywhere; } .empty,.chart-message { color:#91a5aa; font-size:11px; padding:12px 4px; border:1px dashed #33464d; } .chart-panel { border-top:1px solid #304047; margin-top:20px; padding-top:1px; } .chart { width:100%; height:130px; overflow:visible; } .gridline { stroke:#2e4147; stroke-width:1; } .trend { fill:none; stroke:#52b6c7; stroke-width:2.5; } text { fill:#71858a; font-size:8px; }
     .legend { display:flex; gap:12px; color:#8fa3a8; font-size:10px; border-top:1px solid #304047; padding-top:12px; } .legend-dot { display:inline-block; width:7px; height:7px; border-radius:50%; margin-right:4px; } .red { background:#e56b55; } .cyan { background:#52b6c7; } .amber { background:#f2ad42; }
 </style>
