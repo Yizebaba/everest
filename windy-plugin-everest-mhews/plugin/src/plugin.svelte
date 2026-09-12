@@ -18,7 +18,7 @@
     <div class="summary-grid">
         <div class="metric"><span>DECISION</span><strong class="unknown">{decision}</strong><small>Windy is display-only</small></div>
         <div class="metric"><span>CAP MESSAGES</span><strong>{alertCount}</strong><small>validated active areas</small></div>
-        <div class="metric"><span>TELEMETRY</span><strong>{sensorCount}</strong><small>{sensorCount ? 'positioned observations' : 'no usable positions'}</small></div>
+        <div class="metric"><span>TELEMETRY</span><strong>{sensors.length}</strong><small>{sensors.length ? 'positioned observations' : 'no usable positions'}</small></div>
     </div>
 
     <div class="section-heading"><span>LIVE EVIDENCE</span><span class="muted">read-only adapter</span></div>
