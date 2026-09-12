@@ -1,0 +1,20 @@
+name: Verify Windy Plugins API key
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/verify-windy-api-key.yml
+
+jobs:
+  verify-secret:
+    runs-on: ubuntu-latest
+    permissions: {}
+    env:
+      WINDY_API_KEY: ${{ secrets.WINDY_API_KEY }}
+    steps:
+      - name: Verify secret is available
+        shell: bash
+        run: |
+          test -n "$WINDY_API_KEY"
+          echo "WINDY_API_KEY is available to this repository workflow."
