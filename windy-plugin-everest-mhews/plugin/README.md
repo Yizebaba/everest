@@ -19,7 +19,6 @@ npm run build
 
 For local Windy developer mode, run `npm start` and load `https://localhost:9999/plugin.js`.
 
-The panel defaults to `http://127.0.0.1:8000`. Replace it with the HTTPS URL of the
-deployed Everest API. The API must allow `https://www.windy.com` in its explicit CORS
-allow-list. The endpoints are read-only and the plugin does not send credentials or
-ingest telemetry.
+The panel intentionally has no default API URL. Enter the HTTPS URL of the deployed
+Everest API. The API must allow `https://www.windy.com` in its explicit CORS allow-list.
+The endpoints are read-only and the plugin does not send credentials or ingest telemetry.

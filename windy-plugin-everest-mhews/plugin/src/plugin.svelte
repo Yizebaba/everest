@@ -11,7 +11,7 @@
 
     <form class="connection" on:submit|preventDefault={refresh}>
         <label for="api-base">MHEWS API</label>
-        <input id="api-base" bind:value={apiBase} aria-label="MHEWS API base URL" />
+        <input id="api-base" bind:value={apiBase} aria-label="MHEWS API base URL" placeholder="https://your-everest-api.example" />
         <button type="submit">REFRESH</button>
     </form>
 
@@ -74,7 +74,7 @@
     type ApiState = 'loading' | 'available' | 'unavailable';
 
     const { title } = config;
-    let apiBase = 'http://127.0.0.1:8000';
+    let apiBase = '';
     let apiState: ApiState = 'loading';
     let decision = 'UNKNOWN';
     let sensors: Sensor[] = [];
@@ -94,6 +94,11 @@
 
     const refresh = async () => {
         apiState = 'loading'; chartStatus = 'loading';
+        if (!apiBase.trim()) {
+            sensors = []; alertCount = 0; alertHeadlines = []; decision = 'UNKNOWN';
+            removeLayers(); chartStatus = 'error'; apiState = 'unavailable';
+            return;
+        }
         try {
             const [telemetry, alerts, alertGeoJson, publicGeoJson, weather] = await Promise.all([
                 readJson('/api/telemetry/geojson'), readJson('/api/alerts'), readJson('/api/alerts/geojson'),
