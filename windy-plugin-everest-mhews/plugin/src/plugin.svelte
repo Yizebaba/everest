@@ -11,7 +11,7 @@
 
     <form class="connection" on:submit|preventDefault={refresh}>
         <label for="api-base">MHEWS API</label>
-        <input id="api-base" bind:value={apiBase} aria-label="MHEWS API base URL" placeholder="https://your-everest-api.example" />
+        <input id="api-base" bind:value={apiBase} on:change={persistApiBase} aria-label="MHEWS API base URL" placeholder="https://your-everest-api.example" />
         <button type="submit">REFRESH</button>
     </form>
 
@@ -67,13 +67,14 @@
 <script lang="ts">
     import bcast from '@windy/broadcast';
     import { map } from '@windy/map';
-    import { onDestroy } from 'svelte';
+    import { onDestroy, onMount } from 'svelte';
     import config from './pluginConfig';
 
     type Sensor = { device: string; quantity: string; value: string; unit: string; observedAt: string; quality: string; position: [number, number] };
     type ApiState = 'loading' | 'available' | 'unavailable';
 
     const { title } = config;
+    const apiBaseStorageKey = 'everest-mhews-api-base';
     let apiBase = '';
     let apiState: ApiState = 'loading';
     let decision = 'UNKNOWN';
@@ -86,6 +87,11 @@
     let layers: L.Layer[] = [];
 
     const endpoint = (path: string) => `${apiBase.replace(/\/$/, '')}${path}`;
+    const persistApiBase = () => {
+        const value = apiBase.trim();
+        if (value) localStorage.setItem(apiBaseStorageKey, value);
+        else localStorage.removeItem(apiBaseStorageKey);
+    };
     const readJson = async (path: string) => {
         const response = await fetch(endpoint(path));
         if (!response.ok) throw new Error(`${path}: ${response.status}`);
@@ -141,6 +147,7 @@
     };
 
     export const onopen = () => { refresh(); };
+    onMount(() => { apiBase = localStorage.getItem(apiBaseStorageKey) || ''; });
     onDestroy(removeLayers);
 </script>
 

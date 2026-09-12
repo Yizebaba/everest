@@ -21,4 +21,5 @@ For local Windy developer mode, run `npm start` and load `https://localhost:9999
 
 The panel intentionally has no default API URL. Enter the HTTPS URL of the deployed
 Everest API. The API must allow `https://www.windy.com` in its explicit CORS allow-list.
-The endpoints are read-only and the plugin does not send credentials or ingest telemetry.
+The plugin remembers this URL in browser local storage. The endpoints are read-only and
+the plugin does not send credentials or ingest telemetry.
