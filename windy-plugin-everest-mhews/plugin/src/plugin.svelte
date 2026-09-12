@@ -87,6 +87,9 @@
     let chartPoints = '';
     let errorMessage = '';
     let layers: L.Layer[] = [];
+    let refreshController: AbortController | null = null;
+    let mapController: AbortController | null = null;
+    let refreshEpoch = 0;
 
     const endpoint = (path: string) => `${apiBase.replace(/\/$/, '')}${path}`;
     const isTestTelemetry = (properties: Record<string, unknown>) => {
@@ -96,33 +99,43 @@
     };
     const persistApiBase = () => {
         const value = apiBase.trim();
-        if (value) localStorage.setItem(apiBaseStorageKey, value);
-        else localStorage.removeItem(apiBaseStorageKey);
-    };
-    const readJson = async (path: string) => {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 15000);
         try {
-            const response = await fetch(endpoint(path), { signal: controller.signal });
-            if (!response.ok) throw new Error(`${path}: ${response.status}`);
-            return response.json();
-        } finally {
-            clearTimeout(timeout);
+            if (value) localStorage.setItem(apiBaseStorageKey, value);
+            else localStorage.removeItem(apiBaseStorageKey);
+        } catch {
+            // Storage is optional; the current session remains usable when it is blocked.
         }
+    };
+    const readJson = async (path: string, signal: AbortSignal) => {
+        const response = await fetch(endpoint(path), { signal });
+        if (!response.ok) throw new Error(`${path}: ${response.status}`);
+        return response.json();
     };
 
     const refresh = async () => {
+        refreshController?.abort();
+        mapController?.abort();
+        const controller = new AbortController();
+        refreshController = controller;
+        const epoch = ++refreshEpoch;
+        const timeout = setTimeout(() => controller.abort(), 15000);
         apiState = 'loading'; chartStatus = 'loading'; errorMessage = '';
         if (!apiBase.trim()) {
             sensors = []; alertCount = 0; alertHeadlines = []; decision = 'UNKNOWN';
             removeLayers(); chartStatus = 'error'; apiState = 'unavailable';
+            errorMessage = 'Enter an HTTPS MHEWS API URL.';
+            clearTimeout(timeout);
+            if (refreshController === controller) refreshController = null;
             return;
         }
         try {
             const [telemetry, alerts, alertGeoJson, weather] = await Promise.all([
-                readJson('/api/telemetry/geojson'), readJson('/api/alerts'), readJson('/api/alerts/geojson'),
-                readJson('/api/weather/forecast'),
+                readJson('/api/telemetry/geojson', controller.signal),
+                readJson('/api/alerts', controller.signal),
+                readJson('/api/alerts/geojson', controller.signal),
+                readJson('/api/weather/forecast', controller.signal),
             ]);
+            if (epoch !== refreshEpoch) return;
             sensors = (telemetry.features || []).filter((feature: any) => !isTestTelemetry(feature.properties || {})).map((feature: any) => {
                 const p = feature.properties || {}; const c = feature.geometry?.coordinates;
                 return { device: p.device_id || 'unknown device', quantity: p.quantity || 'unknown quantity', value: p.value == null ? 'UNKNOWN' : String(p.value), unit: p.unit || '', observedAt: p.observed_at || 'unknown time', quality: p.quality_flags ? 'flagged' : 'clean', position: [c[1], c[0]] };
@@ -135,23 +148,29 @@
             const records = weather.records || [];
             chartValues = records.map((record: any) => Number(record.pressure)).filter(Number.isFinite).slice(-8);
             updateChart(); chartStatus = 'ready'; apiState = 'available';
-            try {
-                drawLayers(actualAlertGeoJson, { type: 'FeatureCollection', features: [] });
-            } catch (error) {
-                // A malformed optional map layer must not hide successfully loaded evidence.
-                console.error('MHEWS map layer rendering failed', error);
-            }
-            void readJson('/api/osm/public-baseline/geojson').then(publicGeoJson => {
-                try {
-                    drawLayers(actualAlertGeoJson, publicGeoJson);
-                } catch (error) {
-                    console.error('MHEWS public geometry rendering failed', error);
-                }
-            }).catch(error => console.warn('MHEWS public geometry unavailable', error));
+            drawLayers(actualAlertGeoJson, { type: 'FeatureCollection', features: [] });
+            void loadPublicGeometry(actualAlertGeoJson, epoch);
         } catch (error) {
+            if (epoch !== refreshEpoch) return;
             sensors = []; alertCount = 0; alertHeadlines = []; decision = 'UNKNOWN';
             removeLayers(); chartStatus = 'error'; apiState = 'unavailable';
-            errorMessage = error instanceof Error ? error.message : 'MHEWS API request failed';
+            errorMessage = controller.signal.aborted ? 'MHEWS API request timed out after 15 seconds.' : error instanceof Error ? error.message : 'MHEWS API request failed.';
+        } finally {
+            clearTimeout(timeout);
+            if (refreshController === controller) refreshController = null;
+        }
+    };
+
+    const loadPublicGeometry = async (alertGeoJson: any, epoch: number) => {
+        const controller = new AbortController();
+        mapController = controller;
+        try {
+            const publicGeoJson = await readJson('/api/osm/public-baseline/geojson', controller.signal);
+            if (epoch === refreshEpoch) drawLayers(alertGeoJson, publicGeoJson);
+        } catch (error) {
+            if (!controller.signal.aborted) console.warn('MHEWS public geometry unavailable', error);
+        } finally {
+            if (mapController === controller) mapController = null;
         }
     };
 
@@ -176,8 +195,15 @@
     };
 
     export const onopen = () => { refresh(); };
-    onMount(() => { apiBase = localStorage.getItem(apiBaseStorageKey) || ''; });
-    onDestroy(removeLayers);
+    onMount(() => {
+        try { apiBase = localStorage.getItem(apiBaseStorageKey) || ''; }
+        catch { apiBase = ''; }
+    });
+    onDestroy(() => {
+        refreshController?.abort();
+        mapController?.abort();
+        removeLayers();
+    });
 </script>
 
 <style lang="less">
