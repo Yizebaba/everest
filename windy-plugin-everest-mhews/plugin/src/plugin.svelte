@@ -87,6 +87,11 @@
     let layers: L.Layer[] = [];
 
     const endpoint = (path: string) => `${apiBase.replace(/\/$/, '')}${path}`;
+    const isTestTelemetry = (properties: Record<string, unknown>) => {
+        const deviceId = String(properties.device_id || '');
+        const sourceReference = String(properties.source_reference || '');
+        return /^test-/i.test(deviceId) || /test/i.test(sourceReference);
+    };
     const persistApiBase = () => {
         const value = apiBase.trim();
         if (value) localStorage.setItem(apiBaseStorageKey, value);
@@ -110,13 +115,16 @@
                 readJson('/api/telemetry/geojson'), readJson('/api/alerts'), readJson('/api/alerts/geojson'),
                 readJson('/api/osm/public-baseline/geojson'), readJson('/api/weather/forecast'),
             ]);
-            sensors = (telemetry.features || []).map((feature: any) => {
+            sensors = (telemetry.features || []).filter((feature: any) => !isTestTelemetry(feature.properties || {})).map((feature: any) => {
                 const p = feature.properties || {}; const c = feature.geometry?.coordinates;
                 return { device: p.device_id || 'unknown device', quantity: p.quantity || 'unknown quantity', value: p.value == null ? 'UNKNOWN' : String(p.value), unit: p.unit || '', observedAt: p.observed_at || 'unknown time', quality: p.quality_flags ? 'flagged' : 'clean', position: [c[1], c[0]] };
             }).filter((sensor: Sensor) => Number.isFinite(sensor.position[0]) && Number.isFinite(sensor.position[1]));
-            alertCount = (alerts.alerts || []).length;
-            alertHeadlines = (alerts.alerts || []).flatMap((alert: any) => (alert.info || []).map((item: any) => item.headline || item.event || alert.identifier)).slice(0, 4);
-            drawLayers(alertGeoJson, publicGeoJson);
+            const actualAlerts = (alerts.alerts || []).filter((alert: any) => alert.status === 'Actual');
+            alertCount = actualAlerts.length;
+            alertHeadlines = actualAlerts.flatMap((alert: any) => (alert.info || []).map((item: any) => item.headline || item.event || alert.identifier)).slice(0, 4);
+            const actualAlertIds = new Set(actualAlerts.map((alert: any) => alert.identifier));
+            const actualAlertGeoJson = { ...alertGeoJson, features: (alertGeoJson.features || []).filter((feature: any) => actualAlertIds.has(feature.id)) };
+            drawLayers(actualAlertGeoJson, publicGeoJson);
             const records = weather.records || [];
             chartValues = records.map((record: any) => Number(record.pressure)).filter(Number.isFinite).slice(-8);
             updateChart(); chartStatus = 'ready'; apiState = 'available';

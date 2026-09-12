@@ -9,6 +9,7 @@ Standalone Windy plugin for the Everest multi-hazard monitoring view.
 - Public baseline geometry from `/api/osm/public-baseline/geojson`, shown only as map geometry.
 - Persisted weather pressure records from `/api/weather/forecast`.
 - `UNKNOWN` when the API or evidence is unavailable; this UI never derives a decision level.
+- Test telemetry and CAP `Test` or `Exercise` messages are not shown as operational evidence.
 
 ## Development
 
