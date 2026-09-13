@@ -1,9 +1,9 @@
 {
     "name": "windy-plugin-everest-mhews",
-    "version": "0.1.9",
+    "version": "1.0.0",
     "private": true,
     "type": "module",
-    "description": "Standalone Everest multi-hazard monitoring plugin for Windy.",
+    "description": "NASA GIBS imagery layers for the Windy map.",
     "scripts": {
         "build": "rollup -c",
         "build:win": "rollup -c",
