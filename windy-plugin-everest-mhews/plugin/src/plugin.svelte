@@ -11,6 +11,13 @@
 
     <label class="field-label" for="gibs-search">SEARCH NASA GIBS</label>
     <input id="gibs-search" bind:value={query} placeholder="MODIS, VIIRS, snow, aerosol..." />
+    <div class="quick-filters">
+        <span>冰冻圈推荐</span>
+        <button on:click={() => query = 'NDSI Snow Cover'}>冰雪覆盖</button>
+        <button on:click={() => query = 'Ice Surface Temp'}>冰面温度</button>
+        <button on:click={() => query = 'Snow Depth Over Glaciated Surface'}>冰川积雪深度</button>
+        <button on:click={() => query = ''}>全部</button>
+    </div>
 
     <label class="field-label" for="gibs-layer">IMAGERY PRODUCT · {catalogLayers.length}</label>
     <select id="gibs-layer" size="7" bind:value={selectedLayerId} on:change={replaceLayer}>
@@ -186,7 +193,7 @@
 
 <style lang="less">
     .plugin__content { padding: 12px 14px 24px; color: #e8edf0; background: #11191e; min-height: 100%; } .intro { color: #a8babf; font-size: 12px; line-height: 1.5; margin: 12px 0 18px; }
-    .field-label { display: block; color: #91a5aa; font-size: 10px; letter-spacing: 1px; margin: 15px 0 6px; } input, select { box-sizing: border-box; width: 100%; background: #172126; border: 1px solid #33464d; color: #e8edf0; padding: 8px; } input[type='range'] { accent-color: #52b6c7; padding: 0; } select { font-size: 11px; } .catalog-actions { display:flex; align-items:center; justify-content:space-between; margin-top:6px; } .result-count { color: #71858a; font-size: 10px; } button:disabled { cursor: wait; opacity: 0.55; }
+    .field-label { display: block; color: #91a5aa; font-size: 10px; letter-spacing: 1px; margin: 15px 0 6px; } input, select { box-sizing: border-box; width: 100%; background: #172126; border: 1px solid #33464d; color: #e8edf0; padding: 8px; } input[type='range'] { accent-color: #52b6c7; padding: 0; } select { font-size: 11px; } .quick-filters { display:flex; flex-wrap:wrap; align-items:center; gap:5px; margin-top:8px; color:#91a5aa; font-size:10px; } .quick-filters button { padding:5px 6px; } .catalog-actions { display:flex; align-items:center; justify-content:space-between; margin-top:6px; } .result-count { color: #71858a; font-size: 10px; } button:disabled { cursor: wait; opacity: 0.55; }
     .catalog-status, .tile-status { color: #f2ad42; font-size: 10px; letter-spacing: 1px; } .catalog-status { display: flex; align-items: center; justify-content: space-between; border: 1px solid #33464d; padding: 7px; } .catalog-status.ready, .tile-status.ready { color: #51c7a3; } .catalog-status i, .tile-status i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: currentColor; margin-right: 5px; } button { background: #172126; border: 1px solid #33464d; color: #d7e1e3; padding: 7px 9px; font-size: 10px; cursor: pointer; }
     .control-row { margin-top: 16px; } .action-row { display: flex; align-items: center; justify-content: space-between; border-top: 1px solid #304047; padding-top: 14px; } .error-message { color: #f2ad42; font-size: 11px; border: 1px solid #7b5c2c; padding: 8px; margin-top: 10px; overflow-wrap: anywhere; } .details { display: grid; gap: 4px; margin-top: 18px; color: #71858a; font-size: 10px; } footer { color: #869ba0; font-size: 10px; border-top: 1px solid #304047; margin-top: 18px; padding-top: 12px; } a { color: #52b6c7; }
 </style>
