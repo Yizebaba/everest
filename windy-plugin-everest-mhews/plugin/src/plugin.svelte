@@ -25,7 +25,7 @@
     </details>
 
     <label class="field-label" for="gibs-layer">IMAGERY PRODUCT · {catalogLayers.length}</label>
-    <select id="gibs-layer" size="7" bind:value={selectedLayerId} on:change={replaceLayer}>
+    <select id="gibs-layer" size="7" bind:value={selectedLayerId} on:change={selectLayer}>
         {#each matchingLayers as layer}<option value={layer.id}>{layer.title} {layerHealth[layer.id] === 'available' ? '💚' : layerHealth[layer.id] === 'unavailable' ? '🔴' : '⚪'}</option>{/each}
     </select>
     <div class="catalog-actions"><small class="result-count">{matchingLayers.length} matching layers · {testCompleted}/{catalogLayers.length} tested</small><button on:click={testAllLayers} disabled={catalogStatus !== 'ready' || testStatus === 'running'}>{testStatus === 'running' ? 'TESTING...' : 'TEST ALL'}</button></div>
@@ -162,6 +162,11 @@
     };
     const updateOpacity = () => { imageryLayer?.setOpacity(Number(opacity)); };
     const toggleLayer = () => { visible = !visible; replaceLayer(); };
+    const selectLayer = () => {
+        const layer = catalogLayers.find(item => item.id === selectedLayerId) || initialLayers[0];
+        if (layer.timeEnabled && layer.defaultTime) selectedDate = layer.defaultTime.slice(0, 10);
+        replaceLayer();
+    };
     const selectFilter = (filterId: string) => {
         activeFilter = activeFilter === filterId ? '' : filterId;
         query = '';
@@ -182,6 +187,8 @@
             testCompleted = 0;
             testStatus = 'idle';
             if (!catalogLayers.some(layer => layer.id === selectedLayerId)) selectedLayerId = catalogLayers[0].id;
+            const layer = catalogLayers.find(item => item.id === selectedLayerId) || catalogLayers[0];
+            if (layer.timeEnabled && layer.defaultTime) selectedDate = layer.defaultTime.slice(0, 10);
             catalogStatus = 'ready';
             replaceLayer();
         } catch (error) {
