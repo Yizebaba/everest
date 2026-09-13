@@ -1,18 +1,25 @@
 <div class="plugin__mobile-header">{title}</div>
 <section class="plugin__content">
     <div class="plugin__title plugin__title--chevron-back" on:click={() => bcast.emit('rqstOpen', 'menu')}>{title}</div>
+    <p class="intro">NASA GIBS imagery for map context. Imagery is not a hazard decision layer.</p>
 
-    <div class="intro">
-        NASA GIBS daily satellite imagery for map context. This is imagery, not a hazard decision layer.
+    <div class="catalog-status" class:ready={catalogStatus === 'ready'}>
+        <i></i>{catalogStatus === 'ready' ? `${catalogLayers.length} NASA GIBS layers ready` : catalogStatus.toUpperCase()}
+        <button on:click={loadCatalog}>RELOAD</button>
     </div>
+    {#if catalogError}<div class="error-message">{catalogError}</div>{/if}
+
+    <label class="field-label" for="gibs-search">SEARCH NASA GIBS</label>
+    <input id="gibs-search" bind:value={query} placeholder="MODIS, VIIRS, snow, aerosol..." />
 
     <label class="field-label" for="gibs-layer">IMAGERY PRODUCT</label>
-    <select id="gibs-layer" bind:value={selectedLayerId} on:change={replaceLayer}>
-        {#each layers as layer}<option value={layer.id}>{layer.label}</option>{/each}
+    <select id="gibs-layer" size="7" bind:value={selectedLayerId} on:change={replaceLayer}>
+        {#each matchingLayers as layer}<option value={layer.id}>{layer.title}</option>{/each}
     </select>
+    <small class="result-count">{matchingLayers.length} matching layers</small>
 
     <label class="field-label" for="gibs-date">OBSERVATION DATE</label>
-    <input id="gibs-date" type="date" bind:value={selectedDate} max={today} on:change={replaceLayer} />
+    <input id="gibs-date" type="date" bind:value={selectedDate} max={today} disabled={!selectedLayer.timeEnabled} on:change={replaceLayer} />
 
     <div class="control-row">
         <label class="field-label" for="gibs-opacity">OPACITY {Math.round(opacity * 100)}%</label>
@@ -20,21 +27,13 @@
     </div>
 
     <div class="control-row action-row">
-        <span class:ready={status === 'ready'} class="status"><i></i>{status.toUpperCase()}</span>
+        <span class:ready={tileStatus === 'ready'} class="tile-status"><i></i>{tileStatus.toUpperCase()}</span>
         <button on:click={toggleLayer}>{visible ? 'HIDE MAP' : 'SHOW MAP'}</button>
     </div>
+    {#if tileError}<div class="error-message">{tileError}</div>{/if}
 
-    {#if errorMessage}<div class="error-message">{errorMessage}</div>{/if}
-
-    <div class="details">
-        <span>WMTS / EPSG:3857</span>
-        <span>{selectedLayer.label}</span>
-        <span>{selectedDate}</span>
-    </div>
-
-    <footer>
-        Imagery provided by <a href="https://earthdata.nasa.gov/gibs" target="_blank">NASA EOSDIS GIBS</a>.
-    </footer>
+    <div class="details"><span>{selectedLayer.title}</span><span>{selectedLayer.tileMatrixSet}</span><span>{selectedDate}</span></div>
+    <footer>Imagery provided by <a href="https://earthdata.nasa.gov/gibs" target="_blank">NASA EOSDIS GIBS</a>.</footer>
 </section>
 
 <script lang="ts">
@@ -43,78 +42,105 @@
     import { onDestroy, onMount } from 'svelte';
     import config from './pluginConfig';
 
-    type GIBSLayer = { id: string; label: string };
+    type GIBSLayer = { id: string; title: string; template: string; tileMatrixSet: string; maxZoom: number; timeEnabled: boolean };
 
     const { title } = config;
-    const layers: GIBSLayer[] = [
-        { id: 'MODIS_Terra_CorrectedReflectance_TrueColor', label: 'MODIS Terra True Color' },
-        { id: 'MODIS_Aqua_CorrectedReflectance_TrueColor', label: 'MODIS Aqua True Color' },
-        { id: 'VIIRS_NOAA20_CorrectedReflectance_TrueColor', label: 'VIIRS NOAA-20 True Color' },
-    ];
+    const capabilitiesUrl = 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/1.0.0/WMTSCapabilities.xml';
     const today = new Date().toISOString().slice(0, 10);
     const initialDate = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const initialLayers: GIBSLayer[] = [
+        { id: 'MODIS_Terra_CorrectedReflectance_TrueColor', title: 'MODIS Terra True Color', template: 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_CorrectedReflectance_TrueColor/default/{Time}/GoogleMapsCompatible_Level9/{TileMatrix}/{TileRow}/{TileCol}.jpg', tileMatrixSet: 'GoogleMapsCompatible_Level9', maxZoom: 9, timeEnabled: true },
+        { id: 'MODIS_Aqua_CorrectedReflectance_TrueColor', title: 'MODIS Aqua True Color', template: 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Aqua_CorrectedReflectance_TrueColor/default/{Time}/GoogleMapsCompatible_Level9/{TileMatrix}/{TileRow}/{TileCol}.jpg', tileMatrixSet: 'GoogleMapsCompatible_Level9', maxZoom: 9, timeEnabled: true },
+        { id: 'VIIRS_NOAA20_CorrectedReflectance_TrueColor', title: 'VIIRS NOAA-20 True Color', template: 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_NOAA20_CorrectedReflectance_TrueColor/default/{Time}/GoogleMapsCompatible_Level9/{TileMatrix}/{TileRow}/{TileCol}.jpg', tileMatrixSet: 'GoogleMapsCompatible_Level9', maxZoom: 9, timeEnabled: true },
+    ];
 
-    let selectedLayerId = layers[0].id;
+    let catalogLayers = initialLayers;
+    let catalogStatus: 'loading' | 'ready' | 'error' = 'loading';
+    let catalogError = '';
+    let query = '';
+    let selectedLayerId = initialLayers[0].id;
     let selectedDate = initialDate;
     let opacity = 0.75;
     let visible = true;
-    let status: 'loading' | 'ready' | 'hidden' | 'error' = 'loading';
-    let errorMessage = '';
+    let tileStatus: 'loading' | 'ready' | 'hidden' | 'error' = 'loading';
+    let tileError = '';
     let imageryLayer: L.TileLayer | null = null;
+    let catalogController: AbortController | null = null;
 
-    $: selectedLayer = layers.find(layer => layer.id === selectedLayerId) || layers[0];
+    $: selectedLayer = catalogLayers.find(layer => layer.id === selectedLayerId) || initialLayers[0];
+    $: matchingLayers = catalogLayers.filter(layer => `${layer.title} ${layer.id}`.toLowerCase().includes(query.trim().toLowerCase())).slice(0, 100);
 
-    const tileUrl = () => `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/${selectedLayer.id}/default/${selectedDate}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg`;
+    const directChildText = (element: Element, name: string) => Array.from(element.children).find(child => child.localName === name)?.textContent?.trim() || '';
+    const buildTileUrl = (layer: GIBSLayer) => layer.template
+        .replace(/\{Time\}/g, selectedDate)
+        .replace(/\{TileMatrixSet\}/g, layer.tileMatrixSet)
+        .replace(/\{TileMatrix\}/g, '{z}')
+        .replace(/\{TileRow\}/g, '{y}')
+        .replace(/\{TileCol\}/g, '{x}');
 
-    const removeLayer = () => {
-        imageryLayer?.remove();
-        imageryLayer = null;
+    const parseCapabilities = (xml: string): GIBSLayer[] => {
+        const document = new DOMParser().parseFromString(xml, 'application/xml');
+        if (document.getElementsByTagName('parsererror').length) throw new Error('NASA GIBS capabilities could not be parsed.');
+        const parsed: GIBSLayer[] = [];
+        for (const layerElement of Array.from(document.getElementsByTagNameNS('*', 'Layer'))) {
+            const id = directChildText(layerElement, 'Identifier');
+            const title = directChildText(layerElement, 'Title') || id;
+            const formats = Array.from(layerElement.getElementsByTagNameNS('*', 'Format')).map(element => element.textContent?.trim());
+            const extension = formats.includes('image/png') ? 'png' : formats.includes('image/jpeg') ? 'jpg' : '';
+            const matrix = Array.from(layerElement.getElementsByTagNameNS('*', 'TileMatrixSet')).map(element => element.textContent?.trim()).find(value => value?.startsWith('GoogleMapsCompatible'));
+            const resource = Array.from(layerElement.getElementsByTagNameNS('*', 'ResourceURL')).find(element => element.getAttribute('resourceType') === 'tile' && (element.getAttribute('format') === `image/${extension === 'jpg' ? 'jpeg' : extension}` || !element.getAttribute('format')))?.getAttribute('template');
+            if (!id || !matrix || !resource || !extension) continue;
+            const level = /Level(\d+)$/.exec(matrix);
+            parsed.push({ id, title, template: resource, tileMatrixSet: matrix, maxZoom: level ? Number(level[1]) : 9, timeEnabled: resource.includes('{Time}') });
+        }
+        return parsed.sort((left, right) => left.title.localeCompare(right.title));
     };
 
+    const removeLayer = () => { imageryLayer?.remove(); imageryLayer = null; };
     const replaceLayer = () => {
         removeLayer();
-        errorMessage = '';
-        if (!visible) {
-            status = 'hidden';
-            return;
-        }
-        status = 'loading';
-        imageryLayer = new L.TileLayer(tileUrl(), {
-            minZoom: 0,
-            maxNativeZoom: 9,
-            maxZoom: 19,
-            opacity: Number(opacity),
-            tileSize: 256,
-            layerBucketId: layerOrder.MAIN,
-        });
-        imageryLayer.on('load', () => { status = 'ready'; });
-        imageryLayer.on('tileerror', () => {
-            status = 'error';
-            errorMessage = 'NASA GIBS imagery is unavailable for this product or date.';
-        });
+        tileError = '';
+        if (!visible) { tileStatus = 'hidden'; return; }
+        tileStatus = 'loading';
+        imageryLayer = new L.TileLayer(buildTileUrl(selectedLayer), { minZoom: 0, maxNativeZoom: selectedLayer.maxZoom, maxZoom: 19, opacity: Number(opacity), tileSize: 256, layerBucketId: layerOrder.MAIN });
+        imageryLayer.on('load', () => { tileStatus = 'ready'; });
+        imageryLayer.on('tileerror', () => { tileStatus = 'error'; tileError = 'NASA GIBS imagery is unavailable for this product or date.'; });
         imageryLayer.addTo(map);
     };
-
     const updateOpacity = () => { imageryLayer?.setOpacity(Number(opacity)); };
-    const toggleLayer = () => {
-        visible = !visible;
-        replaceLayer();
+    const toggleLayer = () => { visible = !visible; replaceLayer(); };
+
+    const loadCatalog = async () => {
+        catalogController?.abort();
+        const controller = new AbortController();
+        catalogController = controller;
+        catalogStatus = 'loading'; catalogError = '';
+        try {
+            const response = await fetch(capabilitiesUrl, { signal: controller.signal });
+            if (!response.ok) throw new Error(`NASA GIBS: ${response.status}`);
+            const parsed = parseCapabilities(await response.text());
+            if (catalogController !== controller || !parsed.length) return;
+            catalogLayers = parsed;
+            if (!catalogLayers.some(layer => layer.id === selectedLayerId)) selectedLayerId = catalogLayers[0].id;
+            catalogStatus = 'ready';
+            replaceLayer();
+        } catch (error) {
+            if (catalogController !== controller || controller.signal.aborted) return;
+            catalogStatus = 'error';
+            catalogError = error instanceof Error ? error.message : 'NASA GIBS catalog is unavailable.';
+        } finally {
+            if (catalogController === controller) catalogController = null;
+        }
     };
 
     export const onopen = () => { if (!imageryLayer && visible) replaceLayer(); };
-    onMount(replaceLayer);
-    onDestroy(removeLayer);
+    onMount(() => { replaceLayer(); loadCatalog(); });
+    onDestroy(() => { catalogController?.abort(); removeLayer(); });
 </script>
 
 <style lang="less">
-    .plugin__content { padding: 12px 14px 24px; color: #e8edf0; background: #11191e; min-height: 100%; }
-    .intro { color: #a8babf; font-size: 12px; line-height: 1.5; margin: 12px 0 18px; }
-    .field-label { display: block; color: #91a5aa; font-size: 10px; letter-spacing: 1px; margin: 15px 0 6px; }
-    select, input[type='date'] { box-sizing: border-box; width: 100%; background: #172126; border: 1px solid #33464d; color: #e8edf0; padding: 8px; }
-    input[type='range'] { width: 100%; accent-color: #52b6c7; }
-    .control-row { margin-top: 16px; } .action-row { display: flex; align-items: center; justify-content: space-between; border-top: 1px solid #304047; padding-top: 14px; }
-    button { background: #172126; border: 1px solid #33464d; color: #d7e1e3; padding: 8px 10px; font-size: 10px; cursor: pointer; }
-    .status { color: #f2ad42; font-size: 10px; letter-spacing: 1px; } .status.ready { color: #51c7a3; } .status i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: currentColor; margin-right: 5px; }
-    .error-message { color: #f2ad42; font-size: 11px; border: 1px solid #7b5c2c; padding: 8px; margin-top: 14px; }
-    .details { display: grid; gap: 4px; margin-top: 18px; color: #71858a; font-size: 10px; } footer { color: #869ba0; font-size: 10px; border-top: 1px solid #304047; margin-top: 18px; padding-top: 12px; } a { color: #52b6c7; }
+    .plugin__content { padding: 12px 14px 24px; color: #e8edf0; background: #11191e; min-height: 100%; } .intro { color: #a8babf; font-size: 12px; line-height: 1.5; margin: 12px 0 18px; }
+    .field-label { display: block; color: #91a5aa; font-size: 10px; letter-spacing: 1px; margin: 15px 0 6px; } input, select { box-sizing: border-box; width: 100%; background: #172126; border: 1px solid #33464d; color: #e8edf0; padding: 8px; } input[type='range'] { accent-color: #52b6c7; padding: 0; } select { font-size: 11px; } .result-count { color: #71858a; font-size: 10px; }
+    .catalog-status, .tile-status { color: #f2ad42; font-size: 10px; letter-spacing: 1px; } .catalog-status { display: flex; align-items: center; justify-content: space-between; border: 1px solid #33464d; padding: 7px; } .catalog-status.ready, .tile-status.ready { color: #51c7a3; } .catalog-status i, .tile-status i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: currentColor; margin-right: 5px; } button { background: #172126; border: 1px solid #33464d; color: #d7e1e3; padding: 7px 9px; font-size: 10px; cursor: pointer; }
+    .control-row { margin-top: 16px; } .action-row { display: flex; align-items: center; justify-content: space-between; border-top: 1px solid #304047; padding-top: 14px; } .error-message { color: #f2ad42; font-size: 11px; border: 1px solid #7b5c2c; padding: 8px; margin-top: 10px; overflow-wrap: anywhere; } .details { display: grid; gap: 4px; margin-top: 18px; color: #71858a; font-size: 10px; } footer { color: #869ba0; font-size: 10px; border-top: 1px solid #304047; margin-top: 18px; padding-top: 12px; } a { color: #52b6c7; }
 </style>
