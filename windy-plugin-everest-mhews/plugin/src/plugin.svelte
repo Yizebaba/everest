@@ -9,6 +9,17 @@
     </div>
     {#if catalogError}<div class="error-message">{catalogError}</div>{/if}
 
+    <section class="monitor">
+        <div class="monitor__heading"><span>EVEREST LIVE MONITOR</span><strong>{monitorStatus}</strong></div>
+        <p>影像前后切换仅供人工复核。未接入已验证变化指标时，不生成灾害结论或自动报警。</p>
+        <label class="field-label" for="monitor-current">当前影像日期</label>
+        <input id="monitor-current" type="date" bind:value={currentDate} max={today} />
+        <label class="field-label" for="monitor-baseline">基线影像日期</label>
+        <input id="monitor-baseline" type="date" bind:value={baselineDate} max={today} />
+        <div class="monitor__actions"><button on:click={viewCurrent}>查看当前</button><button on:click={viewBaseline}>查看上期</button></div>
+        <small>风、雨、CAP 和自动风险等级在此简易影像比较中均已关闭。</small>
+    </section>
+
     <label class="field-label" for="gibs-search">SEARCH NASA GIBS</label>
     <input id="gibs-search" bind:value={query} placeholder="MODIS, VIIRS, snow, aerosol..." />
     <details class="theme-group" open>
@@ -115,6 +126,9 @@
     let activeFilter = '';
     let selectedLayerId = initialLayers[0].id;
     let selectedDate = initialDate;
+    let currentDate = initialDate;
+    let baselineDate = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    let monitorStatus = 'UNKNOWN';
     let opacity = 0.75;
     let visible = true;
     let tileStatus: 'loading' | 'ready' | 'hidden' | 'error' = 'loading';
@@ -182,9 +196,12 @@
     };
     const updateOpacity = () => { imageryLayer?.setOpacity(Number(opacity)); };
     const toggleLayer = () => { visible = !visible; replaceLayer(); };
+    const viewCurrent = () => { selectedDate = currentDate; replaceLayer(); };
+    const viewBaseline = () => { selectedDate = baselineDate; replaceLayer(); };
     const selectLayer = () => {
         const layer = catalogLayers.find(item => item.id === selectedLayerId) || initialLayers[0];
         if (layer.timeEnabled && layer.defaultTime) selectedDate = layer.defaultTime.slice(0, 10);
+        currentDate = selectedDate;
         replaceLayer();
     };
     const selectFilter = (filterId: string) => {
@@ -209,6 +226,7 @@
             if (!catalogLayers.some(layer => layer.id === selectedLayerId)) selectedLayerId = catalogLayers[0].id;
             const layer = catalogLayers.find(item => item.id === selectedLayerId) || catalogLayers[0];
             if (layer.timeEnabled && layer.defaultTime) selectedDate = layer.defaultTime.slice(0, 10);
+            currentDate = selectedDate;
             catalogStatus = 'ready';
             replaceLayer();
         } catch (error) {
@@ -258,7 +276,7 @@
 
 <style lang="less">
     .plugin__content { padding: 12px 14px 24px; color: #e8edf0; background: #11191e; min-height: 100%; } .intro { color: #a8babf; font-size: 12px; line-height: 1.5; margin: 12px 0 18px; }
-    .field-label { display: block; color: #91a5aa; font-size: 10px; letter-spacing: 1px; margin: 15px 0 6px; } input, select { box-sizing: border-box; width: 100%; background: #172126; border: 1px solid #33464d; color: #e8edf0; padding: 8px; } input[type='range'] { accent-color: #52b6c7; padding: 0; } select { font-size: 11px; } .theme-group { border-top: 1px solid #304047; margin-top: 12px; padding-top: 8px; } summary { color:#a8babf; cursor:pointer; font-size:11px; } .theme-group small { display:block; color:#71858a; font-size:10px; margin-top:8px; line-height:1.4; } .quick-filters { display:flex; flex-wrap:wrap; align-items:center; gap:5px; margin-top:8px; } .quick-filters button { padding:5px 6px; } .quick-filters button.active { background:#52b6c7; border-color:#52b6c7; color:#101719; } .catalog-actions { display:flex; align-items:center; justify-content:space-between; margin-top:6px; } .result-count { color: #71858a; font-size: 10px; } button:disabled { cursor: wait; opacity: 0.55; }
+    .field-label { display: block; color: #91a5aa; font-size: 10px; letter-spacing: 1px; margin: 15px 0 6px; } input, select { box-sizing: border-box; width: 100%; background: #172126; border: 1px solid #33464d; color: #e8edf0; padding: 8px; } input[type='range'] { accent-color: #52b6c7; padding: 0; } select { font-size: 11px; } .monitor { border:1px solid #304047; border-left:3px solid #f2ad42; padding:10px; margin-top:14px; } .monitor__heading { display:flex; justify-content:space-between; color:#d7e1e3; font-size:11px; letter-spacing:1px; } .monitor__heading strong { color:#f2ad42; font-size:10px; } .monitor p,.monitor small { display:block; color:#a8babf; font-size:11px; line-height:1.45; margin:8px 0; } .monitor small { color:#71858a; font-size:10px; } .monitor__actions { display:flex; gap:6px; margin-top:12px; } .theme-group { border-top: 1px solid #304047; margin-top: 12px; padding-top: 8px; } summary { color:#a8babf; cursor:pointer; font-size:11px; } .theme-group small { display:block; color:#71858a; font-size:10px; margin-top:8px; line-height:1.4; } .quick-filters { display:flex; flex-wrap:wrap; align-items:center; gap:5px; margin-top:8px; } .quick-filters button { padding:5px 6px; } .quick-filters button.active { background:#52b6c7; border-color:#52b6c7; color:#101719; } .catalog-actions { display:flex; align-items:center; justify-content:space-between; margin-top:6px; } .result-count { color: #71858a; font-size: 10px; } button:disabled { cursor: wait; opacity: 0.55; }
     .catalog-status, .tile-status { color: #f2ad42; font-size: 10px; letter-spacing: 1px; } .catalog-status { display: flex; align-items: center; justify-content: space-between; border: 1px solid #33464d; padding: 7px; } .catalog-status.ready, .tile-status.ready { color: #51c7a3; } .catalog-status i, .tile-status i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: currentColor; margin-right: 5px; } button { background: #172126; border: 1px solid #33464d; color: #d7e1e3; padding: 7px 9px; font-size: 10px; cursor: pointer; }
     .control-row { margin-top: 16px; } .action-row { display: flex; align-items: center; justify-content: space-between; border-top: 1px solid #304047; padding-top: 14px; } .error-message { color: #f2ad42; font-size: 11px; border: 1px solid #7b5c2c; padding: 8px; margin-top: 10px; overflow-wrap: anywhere; } .details { display: grid; gap: 4px; margin-top: 18px; color: #71858a; font-size: 10px; } footer { color: #869ba0; font-size: 10px; border-top: 1px solid #304047; margin-top: 18px; padding-top: 12px; } a { color: #52b6c7; }
 </style>
