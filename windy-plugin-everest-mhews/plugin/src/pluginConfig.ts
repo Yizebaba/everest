@@ -2,7 +2,7 @@ import type { ExternalPluginConfig } from '@windy/interfaces.d';
 
 const config: ExternalPluginConfig = {
     name: 'windy-plugin-everest-mhews',
-    version: '1.1.0',
+    version: '1.1.1',
     icon: '⛰',
     title: 'NASA Earthdata GIBS',
     description: 'NASA GIBS satellite imagery layers for the Windy map.',

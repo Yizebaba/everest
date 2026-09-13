@@ -49,9 +49,9 @@
     const today = new Date().toISOString().slice(0, 10);
     const initialDate = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
     const initialLayers: GIBSLayer[] = [
-        { id: 'MODIS_Terra_CorrectedReflectance_TrueColor', title: 'MODIS Terra True Color', template: 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_CorrectedReflectance_TrueColor/default/{Time}/GoogleMapsCompatible_Level9/{TileMatrix}/{TileRow}/{TileCol}.jpg', tileMatrixSet: 'GoogleMapsCompatible_Level9', maxZoom: 9, timeEnabled: true },
-        { id: 'MODIS_Aqua_CorrectedReflectance_TrueColor', title: 'MODIS Aqua True Color', template: 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Aqua_CorrectedReflectance_TrueColor/default/{Time}/GoogleMapsCompatible_Level9/{TileMatrix}/{TileRow}/{TileCol}.jpg', tileMatrixSet: 'GoogleMapsCompatible_Level9', maxZoom: 9, timeEnabled: true },
-        { id: 'VIIRS_NOAA20_CorrectedReflectance_TrueColor', title: 'VIIRS NOAA-20 True Color', template: 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_NOAA20_CorrectedReflectance_TrueColor/default/{Time}/GoogleMapsCompatible_Level9/{TileMatrix}/{TileRow}/{TileCol}.jpg', tileMatrixSet: 'GoogleMapsCompatible_Level9', maxZoom: 9, timeEnabled: true },
+        { id: 'MODIS_Terra_CorrectedReflectance_TrueColor', title: 'MODIS Terra True Color', template: 'https://gibs-{s}.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_CorrectedReflectance_TrueColor/default/{Time}/GoogleMapsCompatible_Level9/{TileMatrix}/{TileRow}/{TileCol}.jpg', tileMatrixSet: 'GoogleMapsCompatible_Level9', maxZoom: 9, timeEnabled: true },
+        { id: 'MODIS_Aqua_CorrectedReflectance_TrueColor', title: 'MODIS Aqua True Color', template: 'https://gibs-{s}.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Aqua_CorrectedReflectance_TrueColor/default/{Time}/GoogleMapsCompatible_Level9/{TileMatrix}/{TileRow}/{TileCol}.jpg', tileMatrixSet: 'GoogleMapsCompatible_Level9', maxZoom: 9, timeEnabled: true },
+        { id: 'VIIRS_NOAA20_CorrectedReflectance_TrueColor', title: 'VIIRS NOAA-20 True Color', template: 'https://gibs-{s}.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_NOAA20_CorrectedReflectance_TrueColor/default/{Time}/GoogleMapsCompatible_Level9/{TileMatrix}/{TileRow}/{TileCol}.jpg', tileMatrixSet: 'GoogleMapsCompatible_Level9', maxZoom: 9, timeEnabled: true },
     ];
 
     let catalogLayers = initialLayers;
@@ -72,6 +72,7 @@
 
     const directChildText = (element: Element, name: string) => Array.from(element.children).find(child => child.localName === name)?.textContent?.trim() || '';
     const buildTileUrl = (layer: GIBSLayer) => layer.template
+        .replace('https://gibs.earthdata.nasa.gov/', 'https://gibs-{s}.earthdata.nasa.gov/')
         .replace(/\{Time\}/g, selectedDate)
         .replace(/\{TileMatrixSet\}/g, layer.tileMatrixSet)
         .replace(/\{TileMatrix\}/g, '{z}')
@@ -102,7 +103,12 @@
         tileError = '';
         if (!visible) { tileStatus = 'hidden'; return; }
         tileStatus = 'loading';
-        imageryLayer = new L.TileLayer(buildTileUrl(selectedLayer), { minZoom: 0, maxNativeZoom: selectedLayer.maxZoom, maxZoom: 19, opacity: Number(opacity), tileSize: 256, layerBucketId: layerOrder.MAIN });
+        imageryLayer = new L.TileLayer(buildTileUrl(selectedLayer), {
+            minZoom: 0, maxNativeZoom: selectedLayer.maxZoom, maxZoom: 19,
+            opacity: Number(opacity), tileSize: 256, layerBucketId: layerOrder.MAIN,
+            subdomains: 'abc', noWrap: true, continuousWorld: true,
+            bounds: [[-85.0511287776, -179.999999975], [85.0511287776, 179.999999975]],
+        });
         imageryLayer.on('load', () => { tileStatus = 'ready'; });
         imageryLayer.on('tileerror', () => { tileStatus = 'error'; tileError = 'NASA GIBS imagery is unavailable for this product or date.'; });
         imageryLayer.addTo(map);
