@@ -25,6 +25,12 @@
         <small>水体参考、水体指数、湿度指数需要 HLS/DSWx 或专门处理流程，不是现成 GIBS 图层。</small>
     </details>
     <details class="theme-group">
+        <summary>Sentinel-2 / HLS</summary>
+        <div class="quick-filters">
+            {#each hlsFilters as filter}<button class:active={activeFilter === filter.id} on:click={() => selectFilter(filter.id)}>{filter.label}</button>{/each}
+        </div>
+    </details>
+    <details class="theme-group">
         <summary>海洋参考（不代表珠峰冰川）</summary>
         <div class="quick-filters">
             {#each oceanFilters as filter}<button class:active={activeFilter === filter.id} on:click={() => selectFilter(filter.id)}>{filter.label}</button>{/each}
@@ -97,6 +103,10 @@
         { id: 'sea-temperature', label: '海表温度', terms: ['sea surface temperature'] },
         { id: 'sea-anomaly', label: '海温异常', terms: ['sea surface temperature anomalies'] },
     ];
+    const hlsFilters: ThemeFilter[] = [
+        { id: 'sentinel-reflectance', label: 'Sentinel-2 反射率', terms: ['sentinel-2 / msi', 'hls_s30'] },
+        { id: 'dswx-hls', label: 'HLS 动态地表水', terms: ['dynamic surface water extent-hls', 'dswx-hls'] },
+    ];
 
     let catalogLayers = initialLayers;
     let catalogStatus: 'loading' | 'ready' | 'error' = 'loading';
@@ -117,7 +127,7 @@
     let testCompleted = 0;
 
     $: selectedLayer = catalogLayers.find(layer => layer.id === selectedLayerId) || initialLayers[0];
-    $: activeTerms = [...cryosphereFilters, ...hydrosphereFilters, ...oceanFilters].find(filter => filter.id === activeFilter)?.terms || [];
+    $: activeTerms = [...cryosphereFilters, ...hydrosphereFilters, ...oceanFilters, ...hlsFilters].find(filter => filter.id === activeFilter)?.terms || [];
     $: matchingLayers = catalogLayers.filter(layer => {
         const haystack = `${layer.title} ${layer.id}`.toLowerCase();
         const textMatches = !query.trim() || haystack.includes(query.trim().toLowerCase());
