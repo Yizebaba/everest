@@ -22,6 +22,13 @@
         <div class="quick-filters">
             {#each hydrosphereFilters as filter}<button class:active={activeFilter === filter.id} on:click={() => selectFilter(filter.id)}>{filter.label}</button>{/each}
         </div>
+        <small>水体参考、水体指数、湿度指数需要 HLS/DSWx 或专门处理流程，不是现成 GIBS 图层。</small>
+    </details>
+    <details class="theme-group">
+        <summary>海洋参考（不代表珠峰冰川）</summary>
+        <div class="quick-filters">
+            {#each oceanFilters as filter}<button class:active={activeFilter === filter.id} on:click={() => selectFilter(filter.id)}>{filter.label}</button>{/each}
+        </div>
     </details>
 
     <label class="field-label" for="gibs-layer">IMAGERY PRODUCT · {catalogLayers.length}</label>
@@ -69,9 +76,8 @@
     const cryosphereFilters: ThemeFilter[] = [
         { id: 'freeze-thaw', label: '冷冻/解冻', terms: ['freeze', 'thaw'] },
         { id: 'frozen-area', label: '冰冻区域', terms: ['frozen'] },
-        { id: 'ice-temperature', label: '冰面温度', terms: ['ice surface temp'] },
-        { id: 'sea-ice', label: '海冰', terms: ['sea ice'] },
-        { id: 'sea-ice-brightness', label: '海冰亮温', terms: ['sea ice brightness'] },
+        { id: 'ice-temperature', label: '冰雪表面温度', terms: ['ice surface temp'] },
+        { id: 'rtc-sar', label: 'RTC SAR 后向散射', terms: ['radiometric terrain corrected sar', 'rtc sar'] },
         { id: 'snow-cover', label: '积雪覆盖', terms: ['snow cover', 'ndsi'] },
         { id: 'snow-depth', label: '积雪深度', terms: ['snow depth'] },
         { id: 'snow-extent', label: '积雪范围', terms: ['snow extent'] },
@@ -79,13 +85,17 @@
         { id: 'snow-water', label: '雪水当量', terms: ['snow water equivalent'] },
     ];
     const hydrosphereFilters: ThemeFilter[] = [
-        { id: 'flood', label: '洪水', terms: ['flood'] },
+        { id: 'flood', label: '洪水观测', terms: ['combined flood'] },
+        { id: 'flood-hazard', label: '洪水危险度（历史）', terms: ['flood hazard'] },
         { id: 'water-extent', label: '地表水范围', terms: ['water extent', 'surface water'] },
         { id: 'soil-moisture', label: '土壤湿度', terms: ['soil moisture'] },
-        { id: 'water-body', label: '水体', terms: ['water body', 'water bodies'] },
-        { id: 'water-index', label: '水体指数', terms: ['water index'] },
-        { id: 'moisture-index', label: '湿度指数', terms: ['moisture index'] },
         { id: 'reservoir', label: '水库', terms: ['reservoir'] },
+    ];
+    const oceanFilters: ThemeFilter[] = [
+        { id: 'sea-ice', label: '海冰范围', terms: ['sea ice extent', 'sea ice concentration'] },
+        { id: 'sea-ice-brightness', label: '海冰亮温', terms: ['brightness temperature for sea ice'] },
+        { id: 'sea-temperature', label: '海表温度', terms: ['sea surface temperature'] },
+        { id: 'sea-anomaly', label: '海温异常', terms: ['sea surface temperature anomalies'] },
     ];
 
     let catalogLayers = initialLayers;
@@ -107,7 +117,7 @@
     let testCompleted = 0;
 
     $: selectedLayer = catalogLayers.find(layer => layer.id === selectedLayerId) || initialLayers[0];
-    $: activeTerms = [...cryosphereFilters, ...hydrosphereFilters].find(filter => filter.id === activeFilter)?.terms || [];
+    $: activeTerms = [...cryosphereFilters, ...hydrosphereFilters, ...oceanFilters].find(filter => filter.id === activeFilter)?.terms || [];
     $: matchingLayers = catalogLayers.filter(layer => {
         const haystack = `${layer.title} ${layer.id}`.toLowerCase();
         const textMatches = !query.trim() || haystack.includes(query.trim().toLowerCase());
@@ -238,7 +248,7 @@
 
 <style lang="less">
     .plugin__content { padding: 12px 14px 24px; color: #e8edf0; background: #11191e; min-height: 100%; } .intro { color: #a8babf; font-size: 12px; line-height: 1.5; margin: 12px 0 18px; }
-    .field-label { display: block; color: #91a5aa; font-size: 10px; letter-spacing: 1px; margin: 15px 0 6px; } input, select { box-sizing: border-box; width: 100%; background: #172126; border: 1px solid #33464d; color: #e8edf0; padding: 8px; } input[type='range'] { accent-color: #52b6c7; padding: 0; } select { font-size: 11px; } .theme-group { border-top: 1px solid #304047; margin-top: 12px; padding-top: 8px; } summary { color:#a8babf; cursor:pointer; font-size:11px; } .quick-filters { display:flex; flex-wrap:wrap; align-items:center; gap:5px; margin-top:8px; } .quick-filters button { padding:5px 6px; } .quick-filters button.active { background:#52b6c7; border-color:#52b6c7; color:#101719; } .catalog-actions { display:flex; align-items:center; justify-content:space-between; margin-top:6px; } .result-count { color: #71858a; font-size: 10px; } button:disabled { cursor: wait; opacity: 0.55; }
+    .field-label { display: block; color: #91a5aa; font-size: 10px; letter-spacing: 1px; margin: 15px 0 6px; } input, select { box-sizing: border-box; width: 100%; background: #172126; border: 1px solid #33464d; color: #e8edf0; padding: 8px; } input[type='range'] { accent-color: #52b6c7; padding: 0; } select { font-size: 11px; } .theme-group { border-top: 1px solid #304047; margin-top: 12px; padding-top: 8px; } summary { color:#a8babf; cursor:pointer; font-size:11px; } .theme-group small { display:block; color:#71858a; font-size:10px; margin-top:8px; line-height:1.4; } .quick-filters { display:flex; flex-wrap:wrap; align-items:center; gap:5px; margin-top:8px; } .quick-filters button { padding:5px 6px; } .quick-filters button.active { background:#52b6c7; border-color:#52b6c7; color:#101719; } .catalog-actions { display:flex; align-items:center; justify-content:space-between; margin-top:6px; } .result-count { color: #71858a; font-size: 10px; } button:disabled { cursor: wait; opacity: 0.55; }
     .catalog-status, .tile-status { color: #f2ad42; font-size: 10px; letter-spacing: 1px; } .catalog-status { display: flex; align-items: center; justify-content: space-between; border: 1px solid #33464d; padding: 7px; } .catalog-status.ready, .tile-status.ready { color: #51c7a3; } .catalog-status i, .tile-status i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: currentColor; margin-right: 5px; } button { background: #172126; border: 1px solid #33464d; color: #d7e1e3; padding: 7px 9px; font-size: 10px; cursor: pointer; }
     .control-row { margin-top: 16px; } .action-row { display: flex; align-items: center; justify-content: space-between; border-top: 1px solid #304047; padding-top: 14px; } .error-message { color: #f2ad42; font-size: 11px; border: 1px solid #7b5c2c; padding: 8px; margin-top: 10px; overflow-wrap: anywhere; } .details { display: grid; gap: 4px; margin-top: 18px; color: #71858a; font-size: 10px; } footer { color: #869ba0; font-size: 10px; border-top: 1px solid #304047; margin-top: 18px; padding-top: 12px; } a { color: #52b6c7; }
 </style>

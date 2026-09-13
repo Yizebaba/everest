@@ -2,7 +2,7 @@ import type { ExternalPluginConfig } from '@windy/interfaces.d';
 
 const config: ExternalPluginConfig = {
     name: 'windy-plugin-everest-mhews',
-    version: '1.4.1',
+    version: '1.5.0',
     icon: '⛰',
     title: 'HQMW 冰冻圈 / Cryosphere',
     description: 'NASA GIBS satellite imagery layers for the Windy map.',

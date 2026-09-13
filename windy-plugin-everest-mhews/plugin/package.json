@@ -1,6 +1,6 @@
 {
     "name": "windy-plugin-everest-mhews",
-    "version": "1.4.1",
+    "version": "1.5.0",
     "private": true,
     "type": "module",
     "description": "NASA GIBS imagery layers for the Windy map.",
