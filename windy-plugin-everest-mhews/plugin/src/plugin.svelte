@@ -66,11 +66,16 @@
 
     <div class="control-row action-row">
         <span class:ready={tileStatus === 'ready'} class="tile-status"><i></i>{tileStatus.toUpperCase()}</span>
-        <div class="map-actions"><button on:click={refreshImagery}>刷新影像</button><button on:click={toggleLayer}>{visible ? 'HIDE MAP' : 'SHOW MAP'}</button></div>
+        <div class="map-actions"><button on:click={focusEverest}>定位珠峰</button><button on:click={refreshImagery}>刷新影像</button><button on:click={toggleLayer}>{visible ? 'HIDE MAP' : 'SHOW MAP'}</button></div>
     </div>
     {#if tileError}<div class="error-message">{tileError}</div>{/if}
 
     <div class="details"><span>{selectedLayer.title}</span><span>{selectedLayer.tileMatrixSet}</span><span>{selectedDate}</span></div>
+    {#if selectedLayer.legendUrl}
+        <details class="legend-panel"><summary>图例 / 单位</summary><img src={selectedLayer.legendUrl} alt="NASA GIBS layer legend" /></details>
+    {:else}
+        <small class="legend-note">当前图层没有 NASA 数值图例，通常为真彩色或分类影像。</small>
+    {/if}
     <footer>Imagery provided by <a href="https://earthdata.nasa.gov/gibs" target="_blank">NASA EOSDIS GIBS</a>.</footer>
 </section>
 
@@ -80,7 +85,7 @@
     import { onDestroy, onMount } from 'svelte';
     import config from './pluginConfig';
 
-    type GIBSLayer = { id: string; title: string; template: string; tileMatrixSet: string; maxZoom: number; timeEnabled: boolean; defaultTime: string };
+    type GIBSLayer = { id: string; title: string; template: string; tileMatrixSet: string; maxZoom: number; timeEnabled: boolean; defaultTime: string; legendUrl: string };
     type ThemeFilter = { id: string; label: string; terms: string[] };
 
     const { title } = config;
@@ -88,9 +93,9 @@
     const today = new Date().toISOString().slice(0, 10);
     const initialDate = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
     const initialLayers: GIBSLayer[] = [
-        { id: 'MODIS_Terra_CorrectedReflectance_TrueColor', title: 'MODIS Terra True Color', template: 'https://gibs-{s}.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_CorrectedReflectance_TrueColor/default/{Time}/GoogleMapsCompatible_Level9/{TileMatrix}/{TileRow}/{TileCol}.jpg', tileMatrixSet: 'GoogleMapsCompatible_Level9', maxZoom: 9, timeEnabled: true, defaultTime: initialDate },
-        { id: 'MODIS_Aqua_CorrectedReflectance_TrueColor', title: 'MODIS Aqua True Color', template: 'https://gibs-{s}.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Aqua_CorrectedReflectance_TrueColor/default/{Time}/GoogleMapsCompatible_Level9/{TileMatrix}/{TileRow}/{TileCol}.jpg', tileMatrixSet: 'GoogleMapsCompatible_Level9', maxZoom: 9, timeEnabled: true, defaultTime: initialDate },
-        { id: 'VIIRS_NOAA20_CorrectedReflectance_TrueColor', title: 'VIIRS NOAA-20 True Color', template: 'https://gibs-{s}.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_NOAA20_CorrectedReflectance_TrueColor/default/{Time}/GoogleMapsCompatible_Level9/{TileMatrix}/{TileRow}/{TileCol}.jpg', tileMatrixSet: 'GoogleMapsCompatible_Level9', maxZoom: 9, timeEnabled: true, defaultTime: initialDate },
+        { id: 'MODIS_Terra_CorrectedReflectance_TrueColor', title: 'MODIS Terra True Color', template: 'https://gibs-{s}.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_CorrectedReflectance_TrueColor/default/{Time}/GoogleMapsCompatible_Level9/{TileMatrix}/{TileRow}/{TileCol}.jpg', tileMatrixSet: 'GoogleMapsCompatible_Level9', maxZoom: 9, timeEnabled: true, defaultTime: initialDate, legendUrl: '' },
+        { id: 'MODIS_Aqua_CorrectedReflectance_TrueColor', title: 'MODIS Aqua True Color', template: 'https://gibs-{s}.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Aqua_CorrectedReflectance_TrueColor/default/{Time}/GoogleMapsCompatible_Level9/{TileMatrix}/{TileRow}/{TileCol}.jpg', tileMatrixSet: 'GoogleMapsCompatible_Level9', maxZoom: 9, timeEnabled: true, defaultTime: initialDate, legendUrl: '' },
+        { id: 'VIIRS_NOAA20_CorrectedReflectance_TrueColor', title: 'VIIRS NOAA-20 True Color', template: 'https://gibs-{s}.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_NOAA20_CorrectedReflectance_TrueColor/default/{Time}/GoogleMapsCompatible_Level9/{TileMatrix}/{TileRow}/{TileCol}.jpg', tileMatrixSet: 'GoogleMapsCompatible_Level9', maxZoom: 9, timeEnabled: true, defaultTime: initialDate, legendUrl: '' },
     ];
     const cryosphereFilters: ThemeFilter[] = [
         { id: 'freeze-thaw', label: '冷冻/解冻', terms: ['freeze', 'thaw'] },
@@ -172,10 +177,12 @@
             const matrix = Array.from(layerElement.getElementsByTagNameNS('*', 'TileMatrixSet')).map(element => element.textContent?.trim()).find(value => value?.startsWith('GoogleMapsCompatible'));
             const timeDimension = Array.from(layerElement.getElementsByTagNameNS('*', 'Dimension')).find(element => directChildText(element, 'Identifier') === 'Time');
             const defaultTime = timeDimension ? directChildText(timeDimension, 'Default') : '';
+            const legend = Array.from(layerElement.getElementsByTagNameNS('*', 'LegendURL'))[0];
+            const legendUrl = legend?.getAttribute('xlink:href') || legend?.getAttributeNS('http://www.w3.org/1999/xlink', 'href') || '';
             const resource = Array.from(layerElement.getElementsByTagNameNS('*', 'ResourceURL')).find(element => element.getAttribute('resourceType') === 'tile' && (element.getAttribute('format') === `image/${extension === 'jpg' ? 'jpeg' : extension}` || !element.getAttribute('format')))?.getAttribute('template');
             if (!id || !matrix || !resource || !extension) continue;
             const level = /Level(\d+)$/.exec(matrix);
-            parsed.push({ id, title, template: resource, tileMatrixSet: matrix, maxZoom: level ? Number(level[1]) : 9, timeEnabled: resource.includes('{Time}'), defaultTime });
+            parsed.push({ id, title, template: resource, tileMatrixSet: matrix, maxZoom: level ? Number(level[1]) : 9, timeEnabled: resource.includes('{Time}'), defaultTime, legendUrl });
         }
         return parsed.sort((left, right) => left.title.localeCompare(right.title));
     };
@@ -205,6 +212,7 @@
         replaceLayer();
         loadCatalog();
     };
+    const focusEverest = () => { map.setView([27.9881, 86.925], 10); };
     const toggleLayer = () => { visible = !visible; replaceLayer(); };
     const viewCurrent = () => { selectedDate = currentDate; replaceLayer(); };
     const viewBaseline = () => { selectedDate = baselineDate; replaceLayer(); };
@@ -288,5 +296,5 @@
     .plugin__content { padding: 12px 14px 24px; color: #e8edf0; background: #11191e; min-height: 100%; } .intro { color: #a8babf; font-size: 12px; line-height: 1.5; margin: 12px 0 18px; }
     .field-label { display: block; color: #91a5aa; font-size: 10px; letter-spacing: 1px; margin: 15px 0 6px; } input, select { box-sizing: border-box; width: 100%; background: #172126; border: 1px solid #33464d; color: #e8edf0; padding: 8px; } input[type='range'] { accent-color: #52b6c7; padding: 0; } select { font-size: 11px; } .monitor { border:1px solid #304047; border-left:3px solid #f2ad42; margin-top:14px; padding:8px 10px; } .monitor summary { display:flex; align-items:center; justify-content:space-between; color:#d7e1e3; font-size:11px; letter-spacing:1px; } .monitor summary strong { color:#f2ad42; font-size:10px; } .monitor p,.monitor small { display:block; color:#a8babf; font-size:11px; line-height:1.45; margin:8px 0; } .monitor small { color:#71858a; font-size:10px; } .monitor__actions { display:flex; gap:6px; margin-top:12px; } .theme-group { border-top: 1px solid #304047; margin-top: 12px; padding-top: 8px; } summary { color:#a8babf; cursor:pointer; font-size:11px; } .theme-group small { display:block; color:#71858a; font-size:10px; margin-top:8px; line-height:1.4; } .quick-filters { display:flex; flex-wrap:wrap; align-items:center; gap:5px; margin-top:8px; } .quick-filters button { padding:5px 6px; } .quick-filters button.active { background:#52b6c7; border-color:#52b6c7; color:#101719; } .catalog-actions { display:flex; align-items:center; justify-content:space-between; margin-top:6px; } .result-count { color: #71858a; font-size: 10px; } button:disabled { cursor: wait; opacity: 0.55; }
     .catalog-status, .tile-status { color: #f2ad42; font-size: 10px; letter-spacing: 1px; } .catalog-status { display: flex; align-items: center; justify-content: space-between; border: 1px solid #33464d; padding: 7px; } .catalog-status.ready, .tile-status.ready { color: #51c7a3; } .catalog-status i, .tile-status i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: currentColor; margin-right: 5px; } button { background: #172126; border: 1px solid #33464d; color: #d7e1e3; padding: 7px 9px; font-size: 10px; cursor: pointer; }
-    .control-row { margin-top: 16px; } .action-row { display: flex; align-items: center; justify-content: space-between; border-top: 1px solid #304047; padding-top: 14px; } .map-actions { display:flex; gap:6px; } .error-message { color: #f2ad42; font-size: 11px; border: 1px solid #7b5c2c; padding: 8px; margin-top: 10px; overflow-wrap: anywhere; } .details { display: grid; gap: 4px; margin-top: 18px; color: #71858a; font-size: 10px; } footer { color: #869ba0; font-size: 10px; border-top: 1px solid #304047; margin-top: 18px; padding-top: 12px; } a { color: #52b6c7; }
+    .control-row { margin-top: 16px; } .action-row { display: flex; align-items: center; justify-content: space-between; border-top: 1px solid #304047; padding-top: 14px; } .map-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:6px; } .legend-panel { border:1px solid #304047; margin-top:12px; padding:7px; } .legend-panel summary { color:#a8babf; } .legend-panel img { display:block; max-width:100%; margin-top:8px; background:#fff; } .legend-note { display:block; color:#71858a; font-size:10px; margin-top:12px; } .error-message { color:#f2ad42; font-size:11px; border:1px solid #7b5c2c; padding:8px; margin-top:10px; overflow-wrap:anywhere; } .details { display:grid; gap:4px; margin-top:18px; color:#71858a; font-size:10px; } footer { color:#869ba0; font-size:10px; border-top:1px solid #304047; margin-top:18px; padding-top:12px; } a { color:#52b6c7; }
 </style>
